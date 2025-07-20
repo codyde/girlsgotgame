@@ -7,6 +7,7 @@ export interface Profile {
   role: 'parent' | 'player'
   child_id: string | null
   is_onboarded: boolean
+  jersey_number: number | null
   created_at: string
   updated_at: string
 }

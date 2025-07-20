@@ -152,7 +152,7 @@ export function FeedScreen() {
 
     // Subscribe to posts changes
     const postsChannel = supabase
-      .channel('posts_changes')
+      .channel('public:posts')
       .on(
         'postgres_changes',
         {
@@ -206,7 +206,7 @@ export function FeedScreen() {
 
     // Subscribe to likes changes
     const likesChannel = supabase
-      .channel('likes_changes')
+      .channel('public:likes')
       .on(
         'postgres_changes',
         {
@@ -242,7 +242,7 @@ export function FeedScreen() {
 
     // Subscribe to comments changes
     const commentsChannel = supabase
-      .channel('comments_changes')
+      .channel('public:comments')
       .on(
         'postgres_changes',
         {
@@ -885,6 +885,55 @@ export function FeedScreen() {
                     <p className="text-sm font-semibold text-gray-900 mb-2">
                       {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
                     </p>
+                  )}
+
+                  {/* Most recent comment preview */}
+                  {comments[post.id]?.length > 0 && !showComments[post.id] && (
+                    <div className="mb-3">
+                      {(() => {
+                        const mostRecentComment = comments[post.id][comments[post.id].length - 1]
+                        const commentProfiles = mostRecentComment.profiles as { name?: string; avatar_url?: string; email?: string } | null
+                        const isOptimistic = mostRecentComment.id.startsWith('temp-')
+                        
+                        return (
+                          <div className={`flex gap-3 ${isOptimistic ? 'opacity-75' : ''}`}>
+                            {commentProfiles?.avatar_url ? (
+                              <img
+                                src={commentProfiles.avatar_url}
+                                alt="Profile"
+                                className="w-6 h-6 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                                {getUserInitials(commentProfiles?.name || null, profile?.email || '')}
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm">
+                                <span className="font-semibold text-gray-900">
+                                  {commentProfiles?.name || commentProfiles?.email?.split('@')[0] || 'Unknown User'}
+                                </span>
+                                <span className="text-gray-700 ml-2">{mostRecentComment.content}</span>
+                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <p className="text-xs text-gray-500">
+                                  {formatTime(mostRecentComment.created_at)}
+                                  {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
+                                </p>
+                                {comments[post.id].length > 1 && (
+                                  <button
+                                    onClick={() => setShowComments(prev => ({ ...prev, [post.id]: true }))}
+                                    className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                                  >
+                                    View all {comments[post.id].length} comments
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
                   )}
 
                   {/* Comments section */}

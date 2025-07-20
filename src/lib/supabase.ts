@@ -18,6 +18,7 @@ export type Database = {
           role: string
           child_id: string | null
           is_onboarded: boolean
+          jersey_number: number | null
           created_at: string
           updated_at: string
         }
@@ -30,6 +31,7 @@ export type Database = {
           role?: string
           child_id?: string | null
           is_onboarded?: boolean
+          jersey_number?: number | null
           created_at?: string
           updated_at?: string
         }
@@ -42,6 +44,7 @@ export type Database = {
           role?: string
           child_id?: string | null
           is_onboarded?: boolean
+          jersey_number?: number | null
           created_at?: string
           updated_at?: string
         }

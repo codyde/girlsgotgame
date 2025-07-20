@@ -1,400 +1,315 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Users, User, ArrowRight, Mail, Clock, LogOut } from 'lucide-react'
+import { Users, User, ArrowRight, Camera, Upload, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
-import { Profile } from '../types'
 import toast from 'react-hot-toast'
+
+type OnboardingStep = 'role' | 'profile-setup'
 
 export function OnboardingScreen() {
   const { updateProfile, signOut } = useAuth()
-  const [step, setStep] = useState<'role' | 'child-selection'>('role')
-  const [, setSelectedRole] = useState<'parent' | 'player' | null>(null)
-  const [players, setPlayers] = useState<Profile[]>([])
-  const [selectedChild, setSelectedChild] = useState<string>('')
-  const [manualEmail, setManualEmail] = useState('')
-  const [showManualEntry, setShowManualEntry] = useState(false)
+  const [step, setStep] = useState<OnboardingStep>('role')
+  const [selectedRole, setSelectedRole] = useState<'parent' | 'player' | null>(null)
+  const [name, setName] = useState('')
+  const [jerseyNumber, setJerseyNumber] = useState('')
+  const [selectedImage, setSelectedImage] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const [loadingPlayers, setLoadingPlayers] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    if (step === 'child-selection') {
-      fetchPlayers()
-    }
-  }, [step])
-
-  const fetchPlayers = async () => {
-    try {
-      setLoadingPlayers(true)
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'player')
-        .order('name')
-
-      if (error) throw error
-      setPlayers(data || [])
-    } catch (error: any) {
-      toast.error('Error loading players: ' + error.message)
-    } finally {
-      setLoadingPlayers(false)
-    }
-  }
-
-  const handleRoleSelection = async (role: 'parent' | 'player') => {
+  const handleRoleSelection = (role: 'parent' | 'player') => {
     setSelectedRole(role)
-    
-    if (role === 'player') {
-      // Players go directly to the main app
-      try {
-        setLoading(true)
-        await updateProfile({ 
-          role: 'player', 
-          is_onboarded: true 
-        })
-      } catch {
-        // Error handling is done in the hook
-      } finally {
-        setLoading(false)
+    setStep('profile-setup')
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit
+        toast.error('Image must be less than 5MB')
+        return
       }
-    } else {
-      // Parents go to child selection
-      setStep('child-selection')
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file')
+        return
+      }
+      setSelectedImage(file)
+      const reader = new FileReader()
+      reader.onload = (e) => setImagePreview(e.target?.result as string)
+      reader.readAsDataURL(file)
     }
   }
 
-  const handleChildSelection = async () => {
+  const uploadImage = async (file: File): Promise<string | null> => {
+    try {
+      setUploading(true)
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${Date.now()}.${fileExt}`
+      const filePath = `avatars/${fileName}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('images')
+        .upload(filePath, file)
+
+      if (uploadError) throw uploadError
+
+      const { data } = supabase.storage
+        .from('images')
+        .getPublicUrl(filePath)
+
+      return data.publicUrl
+    } catch (error: any) {
+      toast.error('Error uploading image: ' + error.message)
+      return null
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const handleComplete = async () => {
+    if (!selectedRole || !name.trim()) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+
+    if (selectedRole === 'player' && !jerseyNumber.trim()) {
+      toast.error('Please enter your jersey number')
+      return
+    }
+
     try {
       setLoading(true)
       
-      let childId = null
-      
-      if (selectedChild) {
-        childId = selectedChild
-      } else if (manualEmail.trim()) {
-        // Find player by email
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', manualEmail.trim().toLowerCase())
-          .eq('role', 'player')
-          .single()
-        
-        if (error || !data) {
-          toast.error('Player not found with that email address')
-          setLoading(false)
+      // Upload image if selected
+      let avatarUrl = null
+      if (selectedImage) {
+        avatarUrl = await uploadImage(selectedImage)
+        if (!avatarUrl) return // uploadImage handles error display
+      }
+
+      // Prepare profile updates
+      const profileUpdates: any = {
+        role: selectedRole,
+        name: name.trim(),
+        is_onboarded: true
+      }
+
+      if (avatarUrl) {
+        profileUpdates.avatar_url = avatarUrl
+      }
+
+      if (selectedRole === 'player' && jerseyNumber.trim()) {
+        const jersey = parseInt(jerseyNumber.trim())
+        if (isNaN(jersey) || jersey < 0 || jersey > 99) {
+          toast.error('Jersey number must be between 0 and 99')
           return
         }
-        
-        childId = data.id
+        profileUpdates.jersey_number = jersey
       }
+
+      await updateProfile(profileUpdates)
       
-      await updateProfile({ 
-        role: 'parent', 
-        child_id: childId,
-        is_onboarded: true 
-      })
-      
-      if (childId) {
-        toast.success('Child assigned successfully!')
-      }
+      // Success is handled by the updateProfile function
     } catch {
       // Error handling is done in the hook
-      setLoading(false)
     } finally {
       setLoading(false)
     }
   }
 
-  const skipChildSelection = async () => {
-    try {
-      setLoading(true)
-      console.log('🟡 Starting skipChildSelection...')
-      await updateProfile({ 
-        role: 'parent', 
-        child_id: null,
-        is_onboarded: true 
-      })
-      console.log('🟢 updateProfile completed successfully')
-      toast.success('Setup completed! You can assign a child later in your profile.')
-    } catch (error) {
-      console.error('🔴 Error in skipChildSelection:', error)
-      // Error handling is done in the hook
-    } finally {
-      setLoading(false)
+  const handleBack = () => {
+    if (step === 'profile-setup') {
+      setStep('role')
+      setSelectedRole(null)
+      setName('')
+      setJerseyNumber('')
+      setSelectedImage(null)
+      setImagePreview(null)
     }
+  }
+
+  if (step === 'role') {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-orange-500 to-purple-600 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
+        >
+          <div className="text-center mb-8">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4">
+              <span className="text-2xl">🏀</span>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Girls Got Game!</h1>
+            <p className="text-gray-600">Let's get you set up. Are you a player or a parent?</p>
+          </div>
+
+          <div className="space-y-4">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleRoleSelection('player')}
+              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <User className="w-6 h-6" />
+                <div className="text-left">
+                  <div className="font-semibold">I'm a Player</div>
+                  <div className="text-sm opacity-90">Track my training and connect with teammates</div>
+                </div>
+              </div>
+              <ArrowRight className="w-5 h-5" />
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={() => handleRoleSelection('parent')}
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <Users className="w-6 h-6" />
+                <div className="text-left">
+                  <div className="font-semibold">I'm a Parent</div>
+                  <div className="text-sm opacity-90">Support and track my child's progress</div>
+                </div>
+              </div>
+              <ArrowRight className="w-5 h-5" />
+            </motion.button>
+          </div>
+
+          <div className="text-center mt-6">
+            <button
+              onClick={signOut}
+              className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-2 mx-auto"
+            >
+              <LogOut className="w-4 h-4" />
+              Sign out
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-4 lg:p-8">
-      {/* Basketball themed background */}
-      <div 
-        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `url('https://images.pexels.com/photos/1752757/pexels-photo-1752757.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&fit=crop')`,
-        }}
-      ></div>
-      <div className="absolute inset-0 bg-gradient-to-br from-orange-500/80 to-purple-600/80"></div>
-      
+    <div className="min-h-screen bg-gradient-to-br from-orange-500 to-purple-600 flex items-center justify-center p-4">
       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 lg:p-10 w-full max-w-md lg:max-w-lg border border-white/20"
+        initial={{ opacity: 0, x: 20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
       >
-        {step === 'role' ? (
-          <>
-            <div className="text-center mb-8">
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4">
+            {selectedRole === 'player' ? <User className="w-8 h-8 text-white" /> : <Users className="w-8 h-8 text-white" />}
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Set Up Your Profile</h1>
+          <p className="text-gray-600">
+            {selectedRole === 'player' 
+              ? "Tell us about yourself so teammates can find you!" 
+              : "Set up your profile to support your child's journey"}
+          </p>
+        </div>
+
+        <div className="space-y-6">
+          {/* Avatar Upload */}
+          <div className="text-center">
+            <div className="relative inline-block">
               <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4 shadow-lg"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => fileInputRef.current?.click()}
+                className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center cursor-pointer overflow-hidden border-4 border-white shadow-lg relative"
               >
-                <span className="text-2xl">🏀</span>
-              </motion.div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                Welcome to Girls Got Game!
-              </h1>
-              <p className="text-gray-600 lg:text-lg">
-                Let's get you set up. Are you a parent or a player?
-              </p>
-            </div>
-
-            <div className="space-y-4 mb-8">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleRoleSelection('parent')}
-                disabled={loading}
-                className="w-full p-6 rounded-xl border-2 border-gray-200 bg-white text-gray-700 hover:border-orange-300 hover:bg-orange-50 transition-all disabled:opacity-50"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center bg-blue-100 text-blue-600">
-                    <Users className="w-6 h-6" />
-                  </div>
-                  <div className="text-left">
-                    <h3 className="text-lg font-semibold">I'm a Parent</h3>
-                    <p className="text-sm opacity-75">Track and support my child's basketball journey</p>
-                  </div>
-                </div>
-              </motion.button>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => handleRoleSelection('player')}
-                disabled={loading}
-                className="w-full p-6 rounded-xl border-2 border-gray-200 bg-white text-gray-700 hover:border-orange-300 hover:bg-orange-50 transition-all disabled:opacity-50"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full flex items-center justify-center bg-orange-100 text-orange-600">
-                    <User className="w-6 h-6" />
-                  </div>
-                  <div className="text-left">
-                    <h3 className="text-lg font-semibold">I'm a Player</h3>
-                    <p className="text-sm opacity-75">Track my own training and progress</p>
-                  </div>
-                </div>
-              </motion.button>
-            </div>
-
-            {loading && (
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto"></div>
-              </div>
-            )}
-
-            {/* Cancel and Logout Button */}
-            <div className="mt-6 text-center">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={() => {
-                  console.log('🔴 LOGOUT BUTTON CLICKED - Starting logout process...')
-                  signOut().then(() => {
-                    console.log('🔴 LOGOUT COMPLETED - Forcing page reload...')
-                    // Force page reload to completely clear state
-                    window.location.href = '/'
-                  }).catch((error) => {
-                    console.error('🔴 LOGOUT ERROR:', error)
-                    // Force reload even on error to clear stuck state
-                    window.location.href = '/'
-                  })
-                }}
-                disabled={loading}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
-              >
-                <LogOut className="w-4 h-4" />
-                Cancel and Logout
-              </motion.button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="text-center mb-8">
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2 }}
-                className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full mb-4 shadow-lg"
-              >
-                <Users className="w-8 h-8 text-white" />
-              </motion.div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                Select Your Child
-              </h1>
-              <p className="text-gray-600 lg:text-lg">
-                Choose which player you'd like to track
-              </p>
-            </div>
-
-            {loadingPlayers ? (
-              <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading players...</p>
-              </div>
-            ) : (
-              <div className="space-y-4 mb-6">
-                {/* Existing Players */}
-                {players.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-medium text-gray-700 mb-3">Select from registered players:</h3>
-                    <div className="space-y-2 max-h-48 overflow-y-auto">
-                      {players.map((player) => (
-                        <motion.button
-                          key={player.id}
-                          whileHover={{ scale: 1.02 }}
-                          whileTap={{ scale: 0.98 }}
-                          onClick={() => {
-                            setSelectedChild(player.id)
-                            setManualEmail('')
-                            setShowManualEntry(false)
-                          }}
-                          className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                            selectedChild === player.id
-                              ? 'border-orange-500 bg-orange-50 text-orange-700'
-                              : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            {player.avatar_url ? (
-                              <img
-                                src={player.avatar_url}
-                                alt="Player"
-                                className="w-10 h-10 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-                                {player.name?.[0]?.toUpperCase() || player.email[0].toUpperCase()}
-                              </div>
-                            )}
-                            <div>
-                              <p className="font-semibold">{player.name || player.email.split('@')[0]}</p>
-                              <p className="text-sm opacity-75">{player.total_points} points</p>
-                            </div>
-                          </div>
-                        </motion.button>
-                      ))}
-                    </div>
+                {imagePreview ? (
+                  <img
+                    src={imagePreview}
+                    alt="Preview"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <Camera className="w-8 h-8 text-gray-400" />
+                )}
+                {uploading && (
+                  <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white"></div>
                   </div>
                 )}
-
-                {/* Manual Entry Option */}
-                <div className="border-t border-gray-200 pt-4">
-                  <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      setShowManualEntry(!showManualEntry)
-                      setSelectedChild('')
-                    }}
-                    className={`w-full p-4 rounded-lg border-2 transition-all text-left ${
-                      showManualEntry
-                        ? 'border-blue-500 bg-blue-50 text-blue-700'
-                        : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white">
-                        <Mail className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <p className="font-semibold">Enter child's email manually</p>
-                        <p className="text-sm opacity-75">If your child isn't listed above</p>
-                      </div>
-                    </div>
-                  </motion.button>
-
-                  {showManualEntry && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="mt-3"
-                    >
-                      <input
-                        type="email"
-                        value={manualEmail}
-                        onChange={(e) => setManualEmail(e.target.value)}
-                        placeholder="child@email.com"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                      />
-                    </motion.div>
-                  )}
-                </div>
-
-                {/* No Players Message */}
-                {players.length === 0 && (
-                  <div className="text-center py-6 bg-gray-50 rounded-lg">
-                    <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-600 mb-2">No registered players found</p>
-                    <p className="text-sm text-gray-500">Use the manual entry option below to add your child's email</p>
-                  </div>
-                )}
+              </motion.div>
+              <div className="absolute bottom-0 right-0 bg-orange-500 rounded-full p-1">
+                <Upload className="w-3 h-3 text-white" />
               </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex gap-3 mt-6">
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={skipChildSelection}
-                disabled={loading}
-                className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  {loading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-500"></div>
-                  ) : (
-                    <>
-                      <Clock className="w-4 h-4" />
-                      Skip for now
-                    </>
-                  )}
-                </div>
-              </motion.button>
-
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleChildSelection}
-                disabled={loading || (!selectedChild && !manualEmail.trim())}
-                className="flex-1 px-6 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  {loading ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </div>
-              </motion.button>
             </div>
-          </>
-        )}
+            <p className="text-sm text-gray-500 mt-2">Tap to add a photo</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageSelect}
+              className="hidden"
+            />
+          </div>
+
+          {/* Name Input */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {selectedRole === 'player' ? 'Your Name' : 'Your Name'} *
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={selectedRole === 'player' ? 'Enter your full name' : 'Enter your name'}
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Jersey Number (Players Only) */}
+          {selectedRole === 'player' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Jersey Number *
+              </label>
+              <input
+                type="number"
+                value={jerseyNumber}
+                onChange={(e) => setJerseyNumber(e.target.value)}
+                placeholder="Enter your jersey number (0-99)"
+                min="0"
+                max="99"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              />
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleBack}
+              className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              Back
+            </button>
+            <button
+              onClick={handleComplete}
+              disabled={loading || uploading || !name.trim() || (selectedRole === 'player' && !jerseyNumber.trim())}
+              className="flex-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 px-6 rounded-lg font-medium disabled:opacity-50 hover:shadow-lg transition-all flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Setting up...
+                </>
+              ) : (
+                <>
+                  Complete Setup
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </motion.div>
     </div>
   )
