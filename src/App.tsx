@@ -3,7 +3,6 @@ import { Toaster } from 'react-hot-toast'
 import { useAuth } from './hooks/useAuth'
 import { supabase } from './lib/supabase'
 import { AuthScreen } from './components/AuthScreen'
-import { OnboardingScreen } from './components/OnboardingScreen'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
 import { TrainingScreen } from './components/TrainingScreen'
@@ -13,9 +12,8 @@ import { AdminScreen } from './components/AdminScreen'
 import { Navigation } from './components/Navigation'
 
 function AppContent() {
-  const { session, user, profile, updateProfile } = useAuth()
+  const { session, profile, updateProfile } = useAuth()
   const [currentTab, setCurrentTab] = useState('feed')
-  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Watch for profile changes and set onboarding state based on database value

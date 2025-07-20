@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Shield, Trash2, User, Trophy, Calendar, AlertTriangle, Users, Edit2 } from 'lucide-react'
+import { Shield, Trash2, User, Trophy, AlertTriangle, Users, Edit2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../hooks/useAuth'
 import { Profile, Workout } from '../types'

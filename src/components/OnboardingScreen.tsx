@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 export function OnboardingScreen() {
   const { updateProfile, signOut } = useAuth()
   const [step, setStep] = useState<'role' | 'child-selection'>('role')
-  const [selectedRole, setSelectedRole] = useState<'parent' | 'player' | null>(null)
+  const [, setSelectedRole] = useState<'parent' | 'player' | null>(null)
   const [players, setPlayers] = useState<Profile[]>([])
   const [selectedChild, setSelectedChild] = useState<string>('')
   const [manualEmail, setManualEmail] = useState('')
@@ -52,7 +52,7 @@ export function OnboardingScreen() {
           role: 'player', 
           is_onboarded: true 
         })
-      } catch (error) {
+      } catch {
         // Error handling is done in the hook
       } finally {
         setLoading(false)
@@ -98,7 +98,7 @@ export function OnboardingScreen() {
       if (childId) {
         toast.success('Child assigned successfully!')
       }
-    } catch (error) {
+    } catch {
       // Error handling is done in the hook
       setLoading(false)
     } finally {

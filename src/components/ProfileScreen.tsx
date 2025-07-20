@@ -83,7 +83,7 @@ export function ProfileScreen() {
       } else {
         toast.success('Child assignment removed')
       }
-    } catch (error) {
+    } catch {
       // Error handling is done in the hook
     }
   }
@@ -92,7 +92,7 @@ export function ProfileScreen() {
     try {
       await updateProfile({ name: name.trim() || null })
       setIsEditing(false)
-    } catch (error) {
+    } catch {
       // Error is handled in the hook
     }
   }

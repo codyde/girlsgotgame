@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import { Profile } from '../types'
@@ -111,6 +111,18 @@ export function useAuth() {
       console.log('🔵 updateProfile called with:', updates)
       console.log('🔵 Current profile before update:', profile)
 
+      // Optimistic update: immediately update UI  
+      const previousProfile = profile // Used in catch block for error recovery
+      setProfile(prevProfile => {
+        if (!prevProfile) return prevProfile
+        return {
+          ...prevProfile,
+          ...updates,
+          updated_at: new Date().toISOString(),
+          _updated: new Date().getTime() // Force new object reference
+        }
+      })
+
       const { data, error } = await supabase
         .from('profiles')
         .update(updates)
@@ -122,9 +134,9 @@ export function useAuth() {
 
       if (error) throw error
 
-      console.log('🔵 Setting new profile state:', data)
+      console.log('🔵 Setting final profile state:', data)
       console.log('🔵 New profile is_onboarded value:', data?.is_onboarded)
-      // Force a new object reference to ensure React detects the change
+      // Update with the real data from the database
       setProfile(prevProfile => {
         console.log('🔵 Previous profile in setter:', prevProfile)
         console.log('🔵 New profile in setter:', data)
@@ -141,6 +153,12 @@ export function useAuth() {
       toast.success('Profile updated successfully!')
     } catch (error: any) {
       console.error('Update profile error:', error)
+      
+      // Revert optimistic update on error
+      if (previousProfile) {
+        setProfile(previousProfile)
+      }
+      
       toast.error('Failed to update profile')
       throw error
     }

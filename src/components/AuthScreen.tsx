@@ -1,42 +1,11 @@
 import React, { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Mail, Users } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import toast from 'react-hot-toast'
 
 export function AuthScreen() {
-  const [email, setEmail] = useState(() => {
-    // Load cached email from localStorage
-    return localStorage.getItem('girls-got-game-cached-email') || ''
-  })
   const [loading, setLoading] = useState(false)
 
-  const handleEmailSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (email.trim() && !loading) {
-      try {
-        setLoading(true)
-        // Cache the email for future use
-        localStorage.setItem('girls-got-game-cached-email', email.trim())
-        
-        const { error } = await supabase.auth.signInWithOtp({
-          email: email.trim(),
-          options: {
-            emailRedirectTo: window.location.origin
-          }
-        })
-        
-        if (error) throw error
-        
-        toast.success('Magic link sent! Check your email to sign in.')
-      } catch (error: any) {
-        console.error('Email sign-in error:', error)
-        toast.error('Failed to send magic link')
-      } finally {
-        setLoading(false)
-      }
-    }
-  }
 
   const handleGoogleSignIn = async () => {
     try {
@@ -74,14 +43,6 @@ export function AuthScreen() {
     }
   }
 
-  const handleEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newEmail = e.target.value
-    setEmail(newEmail)
-    // Cache email as user types (debounced by React's batching)
-    if (newEmail.trim()) {
-      localStorage.setItem('girls-got-game-cached-email', newEmail.trim())
-    }
-  }
 
   // Show loading message if we're processing OAuth callback
   const urlParams = new URLSearchParams(window.location.search)

@@ -67,7 +67,7 @@ export function ParentDashboard() {
       setSelectedChild(childId)
       fetchChildWorkouts(childId)
       toast.success('Child assigned successfully!')
-    } catch (error) {
+    } catch {
       // Error handling is done in the hook
     }
   }

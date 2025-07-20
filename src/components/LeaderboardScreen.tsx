@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Trophy, Award, Target, TrendingUp } from 'lucide-react'
+import { Trophy, Award, TrendingUp } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { Profile } from '../types'
 import toast from 'react-hot-toast'

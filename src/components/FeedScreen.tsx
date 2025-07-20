@@ -122,25 +122,6 @@ export function FeedScreen() {
     }
   }, [fetchAllLikes, fetchAllComments])
 
-  const fetchSinglePost = useCallback(async (postId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles:user_id (name, avatar_url, email),
-          workouts:workout_id (exercise_type, points_earned, duration_minutes)
-        `)
-        .eq('id', postId)
-        .single()
-
-      if (error) throw error
-      return data
-    } catch (error) {
-      console.error('Error fetching single post:', error)
-      return null
-    }
-  }, [])
 
   // Set up realtime subscriptions
   useEffect(() => {
@@ -327,7 +308,7 @@ export function FeedScreen() {
       likesChannel.unsubscribe()
       commentsChannel.unsubscribe()
     }
-  }, []) // Remove dependencies that cause infinite re-renders
+  }, [fetchPosts])
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -369,32 +350,91 @@ export function FeedScreen() {
   const createPost = async () => {
     if (!user || (!newPost.trim() && !selectedImage)) return
 
+    const postContent = newPost.trim() || ''
+    const selectedImageFile = selectedImage
+    const imagePreviewUrl = imagePreview
+    
+    // Optimistic update: immediately add post to UI
+    const optimisticPost = {
+      id: `temp-${Date.now()}`,
+      user_id: user.id,
+      content: postContent,
+      image_url: imagePreviewUrl, // Use preview URL temporarily
+      workout_id: null,
+      created_at: new Date().toISOString(),
+      profiles: {
+        name: profile?.name || null,
+        avatar_url: profile?.avatar_url || null,
+        email: profile?.email || ''
+      },
+      workouts: null
+    }
+
+    // Add to posts immediately
+    setPosts(current => [optimisticPost, ...current])
+    
+    // Initialize empty likes and comments for optimistic post
+    setLikes(current => ({ ...current, [optimisticPost.id]: [] }))
+    setComments(current => ({ ...current, [optimisticPost.id]: [] }))
+
+    // Clear form and close modal immediately
+    setNewPost('')
+    setSelectedImage(null)
+    setImagePreview(null)
+    setShowNewPost(false)
+
     try {
       setUploading(true)
       let imageUrl = null
 
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage)
-        if (!imageUrl) return
+      if (selectedImageFile) {
+        imageUrl = await uploadImage(selectedImageFile)
+        if (!imageUrl) {
+          throw new Error('Failed to upload image')
+        }
+        
+        // Update the optimistic post with real image URL
+        setPosts(current => 
+          current.map(post => 
+            post.id === optimisticPost.id 
+              ? { ...post, image_url: imageUrl }
+              : post
+          )
+        )
       }
 
       const { error } = await supabase
         .from('posts')
         .insert({
           user_id: user.id,
-          content: newPost.trim() || '',
+          content: postContent,
           image_url: imageUrl
         })
 
       if (error) throw error
 
-      setNewPost('')
-      setSelectedImage(null)
-      setImagePreview(null)
-      setShowNewPost(false)
       toast.success('Post shared!')
-      // Note: We don't need to manually refresh - realtime will handle it
+      // Note: Realtime will replace our optimistic post with the real one
     } catch (error) {
+      // Revert optimistic update on error
+      setPosts(current => current.filter(post => post.id !== optimisticPost.id))
+      setLikes(current => {
+        const updated = { ...current }
+        delete updated[optimisticPost.id]
+        return updated
+      })
+      setComments(current => {
+        const updated = { ...current }
+        delete updated[optimisticPost.id]
+        return updated
+      })
+      
+      // Restore form state
+      setNewPost(postContent)
+      setSelectedImage(selectedImageFile)
+      setImagePreview(imagePreviewUrl)
+      setShowNewPost(true)
+      
       toast.error('Error creating post: ' + String(error))
     } finally {
       setUploading(false)
@@ -403,6 +443,30 @@ export function FeedScreen() {
 
   const toggleLike = async (postId: string) => {
     if (!user) return
+
+    // Optimistic update: immediately update UI
+    const currentLikes = likes[postId] || []
+    const hasLike = currentLikes.some(like => like.user_id === user.id)
+    
+    if (hasLike) {
+      // Optimistically remove like
+      setLikes(current => ({
+        ...current,
+        [postId]: currentLikes.filter(like => like.user_id !== user.id)
+      }))
+    } else {
+      // Optimistically add like
+      const optimisticLike: Like = {
+        id: `temp-${Date.now()}`,
+        post_id: postId,
+        user_id: user.id,
+        created_at: new Date().toISOString()
+      }
+      setLikes(current => ({
+        ...current,
+        [postId]: [...currentLikes, optimisticLike]
+      }))
+    }
 
     try {
       // Check the actual database state to avoid 409 conflicts
@@ -446,6 +510,28 @@ export function FeedScreen() {
       }
     } catch (error: any) {
       console.error('toggleLike error:', error)
+      
+      // Revert optimistic update on error
+      if (hasLike) {
+        // Restore the like that was optimistically removed
+        const revertLike: Like = {
+          id: `revert-${Date.now()}`,
+          post_id: postId,
+          user_id: user.id,
+          created_at: new Date().toISOString()
+        }
+        setLikes(current => ({
+          ...current,
+          [postId]: [...(current[postId] || []), revertLike]
+        }))
+      } else {
+        // Remove the like that was optimistically added
+        setLikes(current => ({
+          ...current,
+          [postId]: (current[postId] || []).filter(like => like.user_id !== user.id)
+        }))
+      }
+      
       toast.error('Error updating like: ' + (error.message || error.toString() || 'Unknown error'))
     }
   }
@@ -453,20 +539,52 @@ export function FeedScreen() {
   const addComment = async (postId: string) => {
     if (!user || !newComment[postId]?.trim()) return
 
+    const commentContent = newComment[postId].trim()
+    
+    // Optimistic update: immediately add comment to UI
+    const optimisticComment: Comment = {
+      id: `temp-${Date.now()}`,
+      post_id: postId,
+      user_id: user.id,
+      content: commentContent,
+      created_at: new Date().toISOString(),
+      profiles: {
+        name: profile?.name || null,
+        avatar_url: profile?.avatar_url || null,
+        email: profile?.email || ''
+      }
+    }
+
+    setComments(current => ({
+      ...current,
+      [postId]: [...(current[postId] || []), optimisticComment]
+    }))
+
+    // Clear input immediately for better UX
+    setNewComment(prev => ({ ...prev, [postId]: '' }))
+
     try {
       const { error } = await supabase
         .from('comments')
         .insert({
           post_id: postId,
           user_id: user.id,
-          content: newComment[postId].trim()
+          content: commentContent
         })
 
       if (error) throw error
 
-      setNewComment(prev => ({ ...prev, [postId]: '' }))
-      // Note: We don't need to manually update state - realtime will handle it
+      // Note: Realtime will replace our optimistic comment with the real one
     } catch (error) {
+      // Revert optimistic update on error
+      setComments(current => ({
+        ...current,
+        [postId]: (current[postId] || []).filter(comment => comment.id !== optimisticComment.id)
+      }))
+      
+      // Restore the comment text
+      setNewComment(prev => ({ ...prev, [postId]: commentContent }))
+      
       toast.error('Error adding comment: ' + String(error))
     }
   }
@@ -673,6 +791,7 @@ export function FeedScreen() {
           posts.map((post, index) => {
             const postProfiles = post.profiles as { name?: string; avatar_url?: string; email?: string } | null
             const postWorkouts = post.workouts as { exercise_type?: string; points_earned?: number; duration_minutes?: number } | null
+            const isOptimistic = post.id.startsWith('temp-')
             
             return (
               <motion.div
@@ -680,7 +799,9 @@ export function FeedScreen() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-100 mb-4 overflow-hidden"
+                className={`bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border mb-4 overflow-hidden ${
+                  isOptimistic ? 'border-orange-200 bg-orange-50/30' : 'border-gray-100'
+                }`}
               >
                 {/* Post header */}
                 <div className="flex items-center gap-3 p-4">
@@ -689,7 +810,10 @@ export function FeedScreen() {
                     <p className="font-semibold text-gray-900">
                       {postProfiles?.name || postProfiles?.email?.split('@')[0] || 'Unknown User'}
                     </p>
-                    <p className="text-sm text-gray-500">{formatTime(post.created_at)}</p>
+                    <p className="text-sm text-gray-500">
+                      {formatTime(post.created_at)}
+                      {isOptimistic && <span className="ml-1 text-orange-500">• Sharing...</span>}
+                    </p>
                   </div>
                 </div>
 
@@ -776,8 +900,9 @@ export function FeedScreen() {
                         <div className="space-y-3 mb-3">
                           {comments[post.id]?.map((comment) => {
                             const commentProfiles = comment.profiles as { name?: string; avatar_url?: string; email?: string } | null
+                            const isOptimistic = comment.id.startsWith('temp-')
                             return (
-                              <div key={comment.id} className="flex gap-3">
+                              <div key={comment.id} className={`flex gap-3 ${isOptimistic ? 'opacity-75' : ''}`}>
                                 {commentProfiles?.avatar_url ? (
                                   <img
                                     src={commentProfiles.avatar_url}
@@ -790,13 +915,16 @@ export function FeedScreen() {
                                   </div>
                                 )}
                                 <div className="flex-1">
-                                  <div className="bg-gray-50 rounded-lg px-3 py-2">
+                                  <div className={`rounded-lg px-3 py-2 ${isOptimistic ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                                     <p className="font-semibold text-sm text-gray-900">
                                       {commentProfiles?.name || commentProfiles?.email?.split('@')[0] || 'Unknown User'}
                                     </p>
                                     <p className="text-gray-800">{comment.content}</p>
                                   </div>
-                                  <p className="text-xs text-gray-500 mt-1">{formatTime(comment.created_at)}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {formatTime(comment.created_at)}
+                                    {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
+                                  </p>
                                 </div>
                               </div>
                             )
