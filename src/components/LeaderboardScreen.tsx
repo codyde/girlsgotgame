@@ -18,6 +18,7 @@ export function LeaderboardScreen() {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
+        .eq('role', 'player') // Only show players, not parents
         .order('total_points', { ascending: false })
         .limit(20)
 

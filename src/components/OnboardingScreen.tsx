@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { Users, User, ArrowRight, Mail, Clock } from 'lucide-react'
+import { Users, User, ArrowRight, Mail, Clock, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../lib/supabase'
 import { Profile } from '../types'
 import toast from 'react-hot-toast'
 
 export function OnboardingScreen() {
-  const { updateProfile } = useAuth()
+  const { updateProfile, signOut } = useAuth()
   const [step, setStep] = useState<'role' | 'child-selection'>('role')
   const [selectedRole, setSelectedRole] = useState<'parent' | 'player' | null>(null)
   const [players, setPlayers] = useState<Profile[]>([])
@@ -109,15 +109,17 @@ export function OnboardingScreen() {
   const skipChildSelection = async () => {
     try {
       setLoading(true)
+      console.log('🟡 Starting skipChildSelection...')
       await updateProfile({ 
         role: 'parent', 
         child_id: null,
         is_onboarded: true 
       })
+      console.log('🟢 updateProfile completed successfully')
       toast.success('Setup completed! You can assign a child later in your profile.')
     } catch (error) {
+      console.error('🔴 Error in skipChildSelection:', error)
       // Error handling is done in the hook
-      setLoading(false)
     } finally {
       setLoading(false)
     }
@@ -201,6 +203,31 @@ export function OnboardingScreen() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500 mx-auto"></div>
               </div>
             )}
+
+            {/* Cancel and Logout Button */}
+            <div className="mt-6 text-center">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  console.log('🔴 LOGOUT BUTTON CLICKED - Starting logout process...')
+                  signOut().then(() => {
+                    console.log('🔴 LOGOUT COMPLETED - Forcing page reload...')
+                    // Force page reload to completely clear state
+                    window.location.href = '/'
+                  }).catch((error) => {
+                    console.error('🔴 LOGOUT ERROR:', error)
+                    // Force reload even on error to clear stuck state
+                    window.location.href = '/'
+                  })
+                }}
+                disabled={loading}
+                className="inline-flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
+              >
+                <LogOut className="w-4 h-4" />
+                Cancel and Logout
+              </motion.button>
+            </div>
           </>
         ) : (
           <>

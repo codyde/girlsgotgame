@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { Edit2, Camera, Award, Calendar, Target, Users, User } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
@@ -10,13 +10,21 @@ export function ProfileScreen() {
   const { profile, updateProfile, user } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingChild, setIsEditingChild] = useState(false)
-  const [name, setName] = useState(profile?.name || '')
+  const [name, setName] = useState('')
   const [players, setPlayers] = useState<Profile[]>([])
-  const [selectedChild, setSelectedChild] = useState(profile?.child_id || '')
+  const [selectedChild, setSelectedChild] = useState('')
   const [manualEmail, setManualEmail] = useState('')
   const [showManualEntry, setShowManualEntry] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [loadingPlayers, setLoadingPlayers] = useState(false)
+
+  // Update state when profile changes
+  useEffect(() => {
+    if (profile) {
+      setName(profile.name || '')
+      setSelectedChild(profile.child_id || '')
+    }
+  }, [profile])
 
   const fetchPlayers = async () => {
     try {
@@ -113,7 +121,6 @@ export function ProfileScreen() {
       const { error: uploadError } = await supabase.storage
         .from('images')
         .upload(filePath, file, {
-          cacheControl: '3600',
           upsert: false
         })
       
@@ -378,7 +385,7 @@ export function ProfileScreen() {
         </motion.div>
       </div>
 
-      {/* Achievement sections */}
+      {/* Activity sections */}
       <div className="px-4 lg:px-6 space-y-4 lg:space-y-6 max-w-2xl lg:mx-auto">
         {/* Recent activity */}
         <motion.div
@@ -397,36 +404,6 @@ export function ProfileScreen() {
           </div>
         </motion.div>
 
-        {/* Achievements */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
-        >
-          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
-            <Award className="w-5 h-5 text-yellow-500" />
-            Achievements
-          </h3>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-yellow-50 rounded-lg p-3 text-center">
-              <div className="text-2xl mb-1">🏆</div>
-              <div className="text-xs font-medium text-yellow-700">First Workout</div>
-            </div>
-            <div className="bg-blue-50 rounded-lg p-3 text-center">
-              <div className="text-2xl mb-1">🎯</div>
-              <div className="text-xs font-medium text-blue-700">100 Points</div>
-            </div>
-            <div className="bg-green-50 rounded-lg p-3 text-center">
-              <div className="text-2xl mb-1">⚡</div>
-              <div className="text-xs font-medium text-green-700">Week Streak</div>
-            </div>
-            <div className="bg-purple-50 rounded-lg p-3 text-center">
-              <div className="text-2xl mb-1">🔥</div>
-              <div className="text-xs font-medium text-purple-700">Team Player</div>
-            </div>
-          </div>
-        </motion.div>
 
         {/* Profile stats */}
         <motion.div

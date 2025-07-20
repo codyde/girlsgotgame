@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -40,13 +40,61 @@ export function FeedScreen() {
   const [newComment, setNewComment] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    fetchPosts()
-  }, [])
-
-  const fetchPosts = async () => {
+  const fetchAllLikes = useCallback(async (postIds: string[]) => {
     try {
       const { data, error } = await supabase
+        .from('likes')
+        .select('*')
+        .in('post_id', postIds)
+
+      if (error) throw error
+      
+      // Group likes by post_id
+      const likesByPost: Record<string, Like[]> = {}
+      data?.forEach(like => {
+        if (!likesByPost[like.post_id]) {
+          likesByPost[like.post_id] = []
+        }
+        likesByPost[like.post_id].push(like)
+      })
+      
+      setLikes(likesByPost)
+    } catch (error) {
+      console.error('Error fetching likes:', error)
+    }
+  }, [])
+
+  const fetchAllComments = useCallback(async (postIds: string[]) => {
+    try {
+      const { data, error } = await supabase
+        .from('comments')
+        .select(`
+          *,
+          profiles:user_id (name, avatar_url)
+        `)
+        .in('post_id', postIds)
+        .order('created_at', { ascending: true })
+
+      if (error) throw error
+      
+      // Group comments by post_id
+      const commentsByPost: Record<string, Comment[]> = {}
+      data?.forEach(comment => {
+        if (!commentsByPost[comment.post_id]) {
+          commentsByPost[comment.post_id] = []
+        }
+        commentsByPost[comment.post_id].push(comment)
+      })
+      
+      setComments(commentsByPost)
+    } catch (error) {
+      console.error('Error fetching comments:', error)
+    }
+  }, [])
+
+  const fetchPosts = useCallback(async () => {
+    try {
+      const { data: postsData, error: postsError } = await supabase
         .from('posts')
         .select(`
           *,
@@ -55,54 +103,209 @@ export function FeedScreen() {
         `)
         .order('created_at', { ascending: false })
 
-      if (error) throw error
-      setPosts(data || [])
+      if (postsError) throw postsError
+      setPosts(postsData || [])
       
-      // Fetch likes and comments for each post
-      if (data) {
-        await Promise.all(data.map(post => Promise.all([
-          fetchLikes(post.id),
-          fetchComments(post.id)
-        ])))
+      // Batch fetch likes and comments for all posts if we have any
+      if (postsData && postsData.length > 0) {
+        const postIds = postsData.map(post => post.id)
+        await Promise.all([
+          fetchAllLikes(postIds),
+          fetchAllComments(postIds)
+        ])
       }
-    } catch (error: any) {
-      toast.error('Error loading posts: ' + error.message)
+    } catch (error) {
+      toast.error('Error loading posts: ' + String(error))
     } finally {
       setLoading(false)
     }
-  }
+  }, [fetchAllLikes, fetchAllComments])
 
-  const fetchLikes = async (postId: string) => {
+  const fetchSinglePost = useCallback(async (postId: string) => {
     try {
       const { data, error } = await supabase
-        .from('likes')
-        .select('*')
-        .eq('post_id', postId)
-
-      if (error) throw error
-      setLikes(prev => ({ ...prev, [postId]: data || [] }))
-    } catch (error: any) {
-      console.error('Error fetching likes:', error)
-    }
-  }
-
-  const fetchComments = async (postId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from('comments')
+        .from('posts')
         .select(`
           *,
-          profiles:user_id (name, avatar_url)
+          profiles:user_id (name, avatar_url),
+          workouts:workout_id (exercise_type, points_earned, duration_minutes)
         `)
-        .eq('post_id', postId)
-        .order('created_at', { ascending: true })
+        .eq('id', postId)
+        .single()
 
       if (error) throw error
-      setComments(prev => ({ ...prev, [postId]: data || [] }))
-    } catch (error: any) {
-      console.error('Error fetching comments:', error)
+      return data
+    } catch (error) {
+      console.error('Error fetching single post:', error)
+      return null
     }
-  }
+  }, [])
+
+  // Set up realtime subscriptions
+  useEffect(() => {
+    fetchPosts()
+
+    console.log('🔄 Setting up realtime subscriptions...')
+
+    // Subscribe to posts changes
+    const postsChannel = supabase
+      .channel('posts_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'posts'
+        },
+        async (payload) => {
+          console.log('📝 Posts change received:', payload)
+          
+          if (payload.eventType === 'INSERT') {
+            // New post added - fetch full post data and add to top
+            const newPost = await fetchSinglePost(payload.new.id)
+            if (newPost) {
+              setPosts(current => [newPost, ...current])
+              // Initialize empty likes and comments for new post
+              setLikes(current => ({ ...current, [newPost.id]: [] }))
+              setComments(current => ({ ...current, [newPost.id]: [] }))
+              console.log('✅ New post added to feed')
+            }
+          } else if (payload.eventType === 'DELETE') {
+            // Post deleted - remove from posts
+            setPosts(current => current.filter(post => post.id !== payload.old.id))
+            // Clean up likes and comments
+            setLikes(current => {
+              const updated = { ...current }
+              delete updated[payload.old.id]
+              return updated
+            })
+            setComments(current => {
+              const updated = { ...current }
+              delete updated[payload.old.id]
+              return updated
+            })
+            console.log('🗑️ Post removed from feed')
+          } else if (payload.eventType === 'UPDATE') {
+            // Post updated - refetch the updated post
+            const updatedPost = await fetchSinglePost(payload.new.id)
+            if (updatedPost) {
+              setPosts(current => 
+                current.map(post => 
+                  post.id === updatedPost.id ? updatedPost : post
+                )
+              )
+              console.log('📝 Post updated in feed')
+            }
+          }
+        }
+      )
+      .subscribe()
+
+    // Subscribe to likes changes
+    const likesChannel = supabase
+      .channel('likes_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'likes'
+        },
+        (payload) => {
+          console.log('❤️ Likes change received:', payload)
+          
+          if (payload.eventType === 'INSERT') {
+            // New like added
+            const newLike = payload.new as Like
+            setLikes(current => ({
+              ...current,
+              [newLike.post_id]: [...(current[newLike.post_id] || []), newLike]
+            }))
+            console.log('👍 Like added')
+          } else if (payload.eventType === 'DELETE') {
+            // Like removed
+            const deletedLike = payload.old as Like
+            setLikes(current => ({
+              ...current,
+              [deletedLike.post_id]: (current[deletedLike.post_id] || []).filter(
+                like => like.id !== deletedLike.id
+              )
+            }))
+            console.log('👎 Like removed')
+          }
+        }
+      )
+      .subscribe()
+
+    // Subscribe to comments changes
+    const commentsChannel = supabase
+      .channel('comments_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'comments'
+        },
+        async (payload) => {
+          console.log('💬 Comments change received:', payload)
+          
+          if (payload.eventType === 'INSERT') {
+            // New comment added - fetch with profile data
+            try {
+              const { data, error } = await supabase
+                .from('comments')
+                .select(`
+                  *,
+                  profiles:user_id (name, avatar_url)
+                `)
+                .eq('id', payload.new.id)
+                .single()
+
+              if (!error && data) {
+                const comment = data as Comment
+                setComments(current => ({
+                  ...current,
+                  [comment.post_id]: [...(current[comment.post_id] || []), comment]
+                }))
+                console.log('💬 Comment added')
+              }
+            } catch (error) {
+              console.error('Error fetching new comment:', error)
+            }
+          } else if (payload.eventType === 'DELETE') {
+            // Comment removed
+            const deletedComment = payload.old as Comment
+            setComments(current => ({
+              ...current,
+              [deletedComment.post_id]: (current[deletedComment.post_id] || []).filter(
+                comment => comment.id !== deletedComment.id
+              )
+            }))
+            console.log('🗑️ Comment removed')
+          } else if (payload.eventType === 'UPDATE') {
+            // Comment updated
+            const updatedComment = payload.new as Comment
+            setComments(current => ({
+              ...current,
+              [updatedComment.post_id]: (current[updatedComment.post_id] || []).map(
+                comment => comment.id === updatedComment.id ? updatedComment : comment
+              )
+            }))
+            console.log('📝 Comment updated')
+          }
+        }
+      )
+      .subscribe()
+
+    // Cleanup subscriptions
+    return () => {
+      console.log('🔌 Cleaning up realtime subscriptions...')
+      postsChannel.unsubscribe()
+      likesChannel.unsubscribe()
+      commentsChannel.unsubscribe()
+    }
+  }, [fetchPosts, fetchSinglePost])
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -135,8 +338,8 @@ export function FeedScreen() {
         .getPublicUrl(filePath)
 
       return data.publicUrl
-    } catch (error: any) {
-      toast.error('Error uploading image: ' + error.message)
+    } catch (error) {
+      toast.error('Error uploading image: ' + String(error))
       return null
     }
   }
@@ -167,10 +370,10 @@ export function FeedScreen() {
       setSelectedImage(null)
       setImagePreview(null)
       setShowNewPost(false)
-      fetchPosts()
       toast.success('Post shared!')
-    } catch (error: any) {
-      toast.error('Error creating post: ' + error.message)
+      // Note: We don't need to manually refresh - realtime will handle it
+    } catch (error) {
+      toast.error('Error creating post: ' + String(error))
     } finally {
       setUploading(false)
     }
@@ -184,33 +387,23 @@ export function FeedScreen() {
       const existingLike = postLikes.find(like => like.user_id === user.id)
 
       if (existingLike) {
-        // Unlike
+        // Unlike - realtime will handle state update
         const { error } = await supabase
           .from('likes')
           .delete()
           .eq('id', existingLike.id)
 
         if (error) throw error
-        setLikes(prev => ({
-          ...prev,
-          [postId]: postLikes.filter(like => like.id !== existingLike.id)
-        }))
       } else {
-        // Like
-        const { data, error } = await supabase
+        // Like - realtime will handle state update
+        const { error } = await supabase
           .from('likes')
           .insert({ post_id: postId, user_id: user.id })
-          .select()
-          .single()
 
         if (error) throw error
-        setLikes(prev => ({
-          ...prev,
-          [postId]: [...postLikes, data]
-        }))
       }
-    } catch (error: any) {
-      toast.error('Error updating like: ' + error.message)
+    } catch (error) {
+      toast.error('Error updating like: ' + String(error))
     }
   }
 
@@ -218,28 +411,20 @@ export function FeedScreen() {
     if (!user || !newComment[postId]?.trim()) return
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('comments')
         .insert({
           post_id: postId,
           user_id: user.id,
           content: newComment[postId].trim()
         })
-        .select(`
-          *,
-          profiles:user_id (name, avatar_url)
-        `)
-        .single()
 
       if (error) throw error
 
-      setComments(prev => ({
-        ...prev,
-        [postId]: [...(prev[postId] || []), data]
-      }))
       setNewComment(prev => ({ ...prev, [postId]: '' }))
-    } catch (error: any) {
-      toast.error('Error adding comment: ' + error.message)
+      // Note: We don't need to manually update state - realtime will handle it
+    } catch (error) {
+      toast.error('Error adding comment: ' + String(error))
     }
   }
 
@@ -258,11 +443,12 @@ export function FeedScreen() {
     return email[0].toUpperCase()
   }
 
-  const getUserAvatar = (userProfile: any, email: string) => {
-    if (userProfile?.avatar_url) {
+  const getUserAvatar = (userProfile: unknown, email: string) => {
+    const profileData = userProfile as { avatar_url?: string; name?: string } | null
+    if (profileData?.avatar_url) {
       return (
         <img
-          src={userProfile.avatar_url}
+          src={profileData.avatar_url}
           alt="Profile"
           className="w-10 h-10 rounded-full object-cover"
         />
@@ -270,7 +456,7 @@ export function FeedScreen() {
     }
     return (
       <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-        {getUserInitials(userProfile?.name, email)}
+        {getUserInitials(profileData?.name || null, email)}
       </div>
     )
   }
@@ -307,13 +493,28 @@ export function FeedScreen() {
       <div className="bg-white border-b border-gray-200 p-4 lg:p-6 sticky top-0 z-40">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Team Feed</h1>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setShowNewPost(true)}
-            className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
-          >
-            <Plus className="w-5 h-5" />
-          </motion.button>
+          <div className="flex items-center gap-2">
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                console.log('🔄 Manual refresh triggered')
+                fetchPosts()
+              }}
+              className="bg-gray-100 text-gray-600 p-3 rounded-full hover:bg-gray-200 transition-all"
+              title="Refresh feed"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </motion.button>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowNewPost(true)}
+              className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
+            >
+              <Plus className="w-5 h-5" />
+            </motion.button>
+          </div>
         </div>
       </div>
 
@@ -426,173 +627,181 @@ export function FeedScreen() {
             <p className="text-gray-500">Be the first to share your training progress</p>
           </div>
         ) : (
-          posts.map((post, index) => (
-            <motion.div
-              key={post.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="bg-white border-b border-gray-100"
-            >
-              {/* Post header */}
-              <div className="flex items-center gap-3 p-4">
-                {getUserAvatar(post.profiles, profile?.email || '')}
-                <div className="flex-1">
-                  <p className="font-semibold text-gray-900">
-                    {(post.profiles as any)?.name || 'Team Member'}
-                  </p>
-                  <p className="text-sm text-gray-500">{formatTime(post.created_at)}</p>
-                </div>
-              </div>
-
-              {/* Workout badge */}
-              {post.workouts && (
-                <div className="px-4 pb-2">
-                  <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm">
-                    <Trophy className="w-4 h-4" />
-                    <span className="capitalize">{(post.workouts as any).exercise_type}</span>
-                    <span>•</span>
-                    <span>+{(post.workouts as any).points_earned} pts</span>
-                    <Clock className="w-3 h-3 ml-1" />
-                    <span>{(post.workouts as any).duration_minutes}m</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Post image */}
-              {post.image_url && (
-                <div className="w-full">
-                  <img
-                    src={post.image_url}
-                    alt="Post content"
-                    className="w-full h-auto max-h-96 object-cover"
-                  />
-                </div>
-              )}
-
-              {/* Post content */}
-              {post.content && (
-                <div className="px-4 py-3">
-                  <p className="text-gray-800">{post.content}</p>
-                </div>
-              )}
-
-              {/* Post actions */}
-              <div className="px-4 py-3 border-t border-gray-50">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-4">
-                    <motion.button
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => toggleLike(post.id)}
-                      className={`flex items-center gap-2 transition-colors ${
-                        isLikedByUser(post.id) 
-                          ? 'text-red-500' 
-                          : 'text-gray-500 hover:text-red-500'
-                      }`}
-                    >
-                      <Heart className={`w-5 h-5 ${isLikedByUser(post.id) ? 'fill-current' : ''}`} />
-                    </motion.button>
-                    <motion.button
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => setShowComments(prev => ({ ...prev, [post.id]: !prev[post.id] }))}
-                      className="flex items-center gap-2 text-gray-500 hover:text-blue-500 transition-colors"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                    </motion.button>
-                    <motion.button
-                      whileTap={{ scale: 0.95 }}
-                      className="flex items-center gap-2 text-gray-500 hover:text-green-500 transition-colors"
-                    >
-                      <Share className="w-5 h-5" />
-                    </motion.button>
+          posts.map((post, index) => {
+            const postProfiles = post.profiles as { name?: string; avatar_url?: string } | null
+            const postWorkouts = post.workouts as { exercise_type?: string; points_earned?: number; duration_minutes?: number } | null
+            
+            return (
+              <motion.div
+                key={post.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="bg-white border-b border-gray-100"
+              >
+                {/* Post header */}
+                <div className="flex items-center gap-3 p-4">
+                  {getUserAvatar(post.profiles, profile?.email || '')}
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900">
+                      {postProfiles?.name || 'Team Member'}
+                    </p>
+                    <p className="text-sm text-gray-500">{formatTime(post.created_at)}</p>
                   </div>
                 </div>
 
-                {/* Like count */}
-                {likes[post.id]?.length > 0 && (
-                  <p className="text-sm font-semibold text-gray-900 mb-2">
-                    {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
-                  </p>
+                {/* Workout badge */}
+                {post.workouts && (
+                  <div className="px-4 pb-2">
+                    <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm">
+                      <Trophy className="w-4 h-4" />
+                      <span className="capitalize">{postWorkouts?.exercise_type}</span>
+                      <span>•</span>
+                      <span>+{postWorkouts?.points_earned} pts</span>
+                      <Clock className="w-3 h-3 ml-1" />
+                      <span>{postWorkouts?.duration_minutes}m</span>
+                    </div>
+                  </div>
                 )}
 
-                {/* Comments section */}
-                <AnimatePresence>
-                  {showComments[post.id] && (
-                    <motion.div
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="border-t border-gray-100 pt-3 mt-3"
-                    >
-                      {/* Existing comments */}
-                      <div className="space-y-3 mb-3">
-                        {comments[post.id]?.map((comment) => (
-                          <div key={comment.id} className="flex gap-3">
-                            {(comment.profiles as any)?.avatar_url ? (
-                              <img
-                                src={(comment.profiles as any).avatar_url}
-                                alt="Profile"
-                                className="w-8 h-8 rounded-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                {getUserInitials((comment.profiles as any)?.name, profile?.email || '')}
-                              </div>
-                            )}
-                            <div className="flex-1">
-                              <div className="bg-gray-50 rounded-lg px-3 py-2">
-                                <p className="font-semibold text-sm text-gray-900">
-                                  {(comment.profiles as any)?.name || 'Team Member'}
-                                </p>
-                                <p className="text-gray-800">{comment.content}</p>
-                              </div>
-                              <p className="text-xs text-gray-500 mt-1">{formatTime(comment.created_at)}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                {/* Post image */}
+                {post.image_url && (
+                  <div className="w-full">
+                    <img
+                      src={post.image_url}
+                      alt="Post content"
+                      className="w-full h-auto max-h-96 object-cover"
+                    />
+                  </div>
+                )}
 
-                      {/* Add comment */}
-                      <div className="flex gap-3">
-                        {profile?.avatar_url ? (
-                          <img
-                            src={profile.avatar_url}
-                            alt="Profile"
-                            className="w-8 h-8 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                            {getUserInitials(profile?.name, profile?.email || '')}
-                          </div>
-                        )}
-                        <div className="flex-1 flex gap-2">
-                          <input
-                            type="text"
-                            value={newComment[post.id] || ''}
-                            onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
-                            placeholder="Add a comment..."
-                            className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
-                            onKeyPress={(e) => {
-                              if (e.key === 'Enter') {
-                                addComment(post.id)
-                              }
-                            }}
-                          />
-                          <button
-                            onClick={() => addComment(post.id)}
-                            disabled={!newComment[post.id]?.trim()}
-                            className="p-2 bg-orange-500 text-white rounded-full disabled:opacity-50 hover:bg-orange-600 transition-colors"
-                          >
-                            <Send className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
+                {/* Post content */}
+                {post.content && (
+                  <div className="px-4 py-3">
+                    <p className="text-gray-800">{post.content}</p>
+                  </div>
+                )}
+
+                {/* Post actions */}
+                <div className="px-4 py-3 border-t border-gray-50">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-4">
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => toggleLike(post.id)}
+                        className={`flex items-center gap-2 transition-colors ${
+                          isLikedByUser(post.id) 
+                            ? 'text-red-500' 
+                            : 'text-gray-500 hover:text-red-500'
+                        }`}
+                      >
+                        <Heart className={`w-5 h-5 ${isLikedByUser(post.id) ? 'fill-current' : ''}`} />
+                      </motion.button>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setShowComments(prev => ({ ...prev, [post.id]: !prev[post.id] }))}
+                        className="flex items-center gap-2 text-gray-500 hover:text-blue-500 transition-colors"
+                      >
+                        <MessageCircle className="w-5 h-5" />
+                      </motion.button>
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        className="flex items-center gap-2 text-gray-500 hover:text-green-500 transition-colors"
+                      >
+                        <Share className="w-5 h-5" />
+                      </motion.button>
+                    </div>
+                  </div>
+
+                  {/* Like count */}
+                  {likes[post.id]?.length > 0 && (
+                    <p className="text-sm font-semibold text-gray-900 mb-2">
+                      {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
+                    </p>
                   )}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          ))
+
+                  {/* Comments section */}
+                  <AnimatePresence>
+                    {showComments[post.id] && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="border-t border-gray-100 pt-3 mt-3"
+                      >
+                        {/* Existing comments */}
+                        <div className="space-y-3 mb-3">
+                          {comments[post.id]?.map((comment) => {
+                            const commentProfiles = comment.profiles as { name?: string; avatar_url?: string } | null
+                            return (
+                              <div key={comment.id} className="flex gap-3">
+                                {commentProfiles?.avatar_url ? (
+                                  <img
+                                    src={commentProfiles.avatar_url}
+                                    alt="Profile"
+                                    className="w-8 h-8 rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                    {getUserInitials(commentProfiles?.name || null, profile?.email || '')}
+                                  </div>
+                                )}
+                                <div className="flex-1">
+                                  <div className="bg-gray-50 rounded-lg px-3 py-2">
+                                    <p className="font-semibold text-sm text-gray-900">
+                                      {commentProfiles?.name || 'Team Member'}
+                                    </p>
+                                    <p className="text-gray-800">{comment.content}</p>
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-1">{formatTime(comment.created_at)}</p>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+
+                        {/* Add comment */}
+                        <div className="flex gap-3">
+                          {profile?.avatar_url ? (
+                            <img
+                              src={profile.avatar_url}
+                              alt="Profile"
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                              {getUserInitials(profile?.name, profile?.email || '')}
+                            </div>
+                          )}
+                          <div className="flex-1 flex gap-2">
+                            <input
+                              type="text"
+                              value={newComment[post.id] || ''}
+                              onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
+                              placeholder="Add a comment..."
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  addComment(post.id)
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => addComment(post.id)}
+                              disabled={!newComment[post.id]?.trim()}
+                              className="p-2 bg-orange-500 text-white rounded-full disabled:opacity-50 hover:bg-orange-600 transition-colors"
+                            >
+                              <Send className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            )
+          })
         )}
       </div>
     </div>
