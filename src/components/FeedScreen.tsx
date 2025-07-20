@@ -15,6 +15,7 @@ interface Comment {
   profiles?: {
     name: string | null
     avatar_url: string | null
+    email: string
   }
 }
 
@@ -70,7 +71,7 @@ export function FeedScreen() {
         .from('comments')
         .select(`
           *,
-          profiles:user_id (name, avatar_url)
+          profiles:user_id (name, avatar_url, email)
         `)
         .in('post_id', postIds)
         .order('created_at', { ascending: true })
@@ -98,7 +99,7 @@ export function FeedScreen() {
         .from('posts')
         .select(`
           *,
-          profiles:user_id (name, avatar_url),
+          profiles:user_id (name, avatar_url, email),
           workouts:workout_id (exercise_type, points_earned, duration_minutes)
         `)
         .order('created_at', { ascending: false })
@@ -127,7 +128,7 @@ export function FeedScreen() {
         .from('posts')
         .select(`
           *,
-          profiles:user_id (name, avatar_url),
+          profiles:user_id (name, avatar_url, email),
           workouts:workout_id (exercise_type, points_earned, duration_minutes)
         `)
         .eq('id', postId)
@@ -147,6 +148,27 @@ export function FeedScreen() {
 
     console.log('🔄 Setting up realtime subscriptions...')
 
+    // Create a helper function to fetch single post within the useEffect scope
+    const fetchSinglePostLocal = async (postId: string) => {
+      try {
+        const { data, error } = await supabase
+          .from('posts')
+          .select(`
+            *,
+            profiles:user_id (name, avatar_url, email),
+            workouts:workout_id (exercise_type, points_earned, duration_minutes)
+          `)
+          .eq('id', postId)
+          .single()
+
+        if (error) throw error
+        return data
+      } catch (error) {
+        console.error('Error fetching single post:', error)
+        return null
+      }
+    }
+
     // Subscribe to posts changes
     const postsChannel = supabase
       .channel('posts_changes')
@@ -162,7 +184,7 @@ export function FeedScreen() {
           
           if (payload.eventType === 'INSERT') {
             // New post added - fetch full post data and add to top
-            const newPost = await fetchSinglePost(payload.new.id)
+            const newPost = await fetchSinglePostLocal(payload.new.id)
             if (newPost) {
               setPosts(current => [newPost, ...current])
               // Initialize empty likes and comments for new post
@@ -187,7 +209,7 @@ export function FeedScreen() {
             console.log('🗑️ Post removed from feed')
           } else if (payload.eventType === 'UPDATE') {
             // Post updated - refetch the updated post
-            const updatedPost = await fetchSinglePost(payload.new.id)
+            const updatedPost = await fetchSinglePostLocal(payload.new.id)
             if (updatedPost) {
               setPosts(current => 
                 current.map(post => 
@@ -257,7 +279,7 @@ export function FeedScreen() {
                 .from('comments')
                 .select(`
                   *,
-                  profiles:user_id (name, avatar_url)
+                  profiles:user_id (name, avatar_url, email)
                 `)
                 .eq('id', payload.new.id)
                 .single()
@@ -305,7 +327,7 @@ export function FeedScreen() {
       likesChannel.unsubscribe()
       commentsChannel.unsubscribe()
     }
-  }, [fetchPosts, fetchSinglePost])
+  }, []) // Remove dependencies that cause infinite re-renders
 
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -619,7 +641,7 @@ export function FeedScreen() {
       </AnimatePresence>
 
       {/* Posts */}
-      <div className="max-w-2xl lg:mx-auto">
+      <div className="max-w-2xl lg:mx-auto px-4 pt-6">
         {posts.length === 0 ? (
           <div className="text-center py-8 px-4">
             <div className="text-4xl mb-4">🏀</div>
@@ -628,7 +650,7 @@ export function FeedScreen() {
           </div>
         ) : (
           posts.map((post, index) => {
-            const postProfiles = post.profiles as { name?: string; avatar_url?: string } | null
+            const postProfiles = post.profiles as { name?: string; avatar_url?: string; email?: string } | null
             const postWorkouts = post.workouts as { exercise_type?: string; points_earned?: number; duration_minutes?: number } | null
             
             return (
@@ -637,14 +659,14 @@ export function FeedScreen() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
-                className="bg-white border-b border-gray-100"
+                className="bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-100 mb-4 overflow-hidden"
               >
                 {/* Post header */}
                 <div className="flex items-center gap-3 p-4">
                   {getUserAvatar(post.profiles, profile?.email || '')}
                   <div className="flex-1">
                     <p className="font-semibold text-gray-900">
-                      {postProfiles?.name || 'Team Member'}
+                      {postProfiles?.name || postProfiles?.email?.split('@')[0] || 'Unknown User'}
                     </p>
                     <p className="text-sm text-gray-500">{formatTime(post.created_at)}</p>
                   </div>
@@ -732,7 +754,7 @@ export function FeedScreen() {
                         {/* Existing comments */}
                         <div className="space-y-3 mb-3">
                           {comments[post.id]?.map((comment) => {
-                            const commentProfiles = comment.profiles as { name?: string; avatar_url?: string } | null
+                            const commentProfiles = comment.profiles as { name?: string; avatar_url?: string; email?: string } | null
                             return (
                               <div key={comment.id} className="flex gap-3">
                                 {commentProfiles?.avatar_url ? (
@@ -749,7 +771,7 @@ export function FeedScreen() {
                                 <div className="flex-1">
                                   <div className="bg-gray-50 rounded-lg px-3 py-2">
                                     <p className="font-semibold text-sm text-gray-900">
-                                      {commentProfiles?.name || 'Team Member'}
+                                      {commentProfiles?.name || commentProfiles?.email?.split('@')[0] || 'Unknown User'}
                                     </p>
                                     <p className="text-gray-800">{comment.content}</p>
                                   </div>
