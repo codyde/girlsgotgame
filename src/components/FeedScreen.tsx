@@ -405,27 +405,48 @@ export function FeedScreen() {
     if (!user) return
 
     try {
-      const postLikes = likes[postId] || []
-      const existingLike = postLikes.find(like => like.user_id === user.id)
+      // Check the actual database state to avoid 409 conflicts
+      const { data: existingLikes, error: fetchError } = await supabase
+        .from('likes')
+        .select('id')
+        .eq('post_id', postId)
+        .eq('user_id', user.id)
 
-      if (existingLike) {
-        // Unlike - realtime will handle state update
+      if (fetchError) {
+        console.error('Error fetching existing likes:', fetchError)
+        throw fetchError
+      }
+
+      const hasExistingLike = existingLikes && existingLikes.length > 0
+
+      if (hasExistingLike) {
+        // Unlike - delete the existing like
         const { error } = await supabase
           .from('likes')
           .delete()
-          .eq('id', existingLike.id)
+          .eq('post_id', postId)
+          .eq('user_id', user.id)
 
-        if (error) throw error
+        if (error) {
+          console.error('Error removing like:', error)
+          throw error
+        }
+        console.log('👎 Like removed successfully')
       } else {
-        // Like - realtime will handle state update
+        // Like - insert new like
         const { error } = await supabase
           .from('likes')
           .insert({ post_id: postId, user_id: user.id })
 
-        if (error) throw error
+        if (error) {
+          console.error('Error adding like:', error)
+          throw error
+        }
+        console.log('👍 Like added successfully')
       }
-    } catch (error) {
-      toast.error('Error updating like: ' + String(error))
+    } catch (error: any) {
+      console.error('toggleLike error:', error)
+      toast.error('Error updating like: ' + (error.message || error.toString() || 'Unknown error'))
     }
   }
 
