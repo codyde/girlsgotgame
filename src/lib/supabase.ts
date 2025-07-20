@@ -1,0 +1,121 @@
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+    storage: window.localStorage,
+    storageKey: 'girls-got-game-auth-token',
+    flowType: 'pkce',
+    debug: false,
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'girls-got-game-web'
+    }
+  }
+})
+
+export type Database = {
+  public: {
+    Tables: {
+      profiles: {
+        Row: {
+          id: string
+          email: string
+          name: string | null
+          avatar_url: string | null
+          total_points: number
+          role: string
+          child_id: string | null
+          is_onboarded: boolean
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          email: string
+          name?: string | null
+          avatar_url?: string | null
+          total_points?: number
+          role?: string
+          child_id?: string | null
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          email?: string
+          name?: string | null
+          avatar_url?: string | null
+          total_points?: number
+          role?: string
+          child_id?: string | null
+          is_onboarded?: boolean
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      workouts: {
+        Row: {
+          id: string
+          user_id: string
+          exercise_type: string
+          points_earned: number
+          duration_minutes: number
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          exercise_type: string
+          points_earned: number
+          duration_minutes: number
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          exercise_type?: string
+          points_earned?: number
+          duration_minutes?: number
+          notes?: string | null
+          created_at?: string
+        }
+      }
+      posts: {
+        Row: {
+          id: string
+          user_id: string
+          content: string
+          image_url: string | null
+          workout_id: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          content: string
+          image_url?: string | null
+          workout_id?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          content?: string
+          image_url?: string | null
+          workout_id?: string | null
+          created_at?: string
+        }
+      }
+    }
+  }
+}
