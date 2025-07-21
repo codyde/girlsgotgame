@@ -1,20 +1,19 @@
 import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Shield, Trash2, User, Trophy, AlertTriangle, Users, Edit2 } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2 } from 'lucide-react'
+import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
-import { Profile, Workout } from '../types'
+import { User, Workout } from '../types'
 import toast from 'react-hot-toast'
 
-interface WorkoutWithProfile extends Workout {
-  profiles?: Profile
+interface WorkoutWithUser extends Workout {
+  user?: User
 }
 
 export function AdminScreen() {
   const { profile } = useAuth()
-  const [workouts, setWorkouts] = useState<WorkoutWithProfile[]>([])
-  const [profiles, setProfiles] = useState<Profile[]>([])
-  const [parentChildRelations, setParentChildRelations] = useState<{parent: Profile, child: Profile | null}[]>([])
+  const [workouts, setWorkouts] = useState<WorkoutWithUser[]>([])
+  const [profiles, setProfiles] = useState<User[]>([])
+  const [parentChildRelations, setParentChildRelations] = useState<{parent: User, child: User | null}[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
   const [showRelations, setShowRelations] = useState(false)
@@ -32,47 +31,22 @@ export function AdminScreen() {
   const fetchData = async () => {
     try {
       // Fetch all workouts with user profiles
-      const { data: workoutData, error: workoutError } = await supabase
-        .from('workouts')
-        .select(`
-          *,
-          profiles:user_id (id, name, email, total_points)
-        `)
-        .order('created_at', { ascending: false })
-
-      if (workoutError) throw workoutError
+      const { data: workoutData, error: workoutError } = await api.getAllWorkouts()
+      if (workoutError) throw new Error(workoutError)
 
       // Fetch all profiles
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .order('total_points', { ascending: false })
-
-      if (profileError) throw profileError
+      const { data: profileData, error: profileError } = await api.getAllProfiles()
+      if (profileError) throw new Error(profileError)
 
       // Fetch parent-child relationships
-      const { data: relationData, error: relationError } = await supabase
-        .from('profiles')
-        .select(`
-          *,
-          child:child_id (*)
-        `)
-        .eq('role', 'parent')
-        .order('name')
-
-      if (relationError) throw relationError
+      const { data: relationData, error: relationError } = await api.getParentChildRelations()
+      if (relationError) throw new Error(relationError)
 
       setWorkouts(workoutData || [])
       setProfiles(profileData || [])
-      
-      // Process parent-child relations
-      const relations = (relationData || []).map(parent => ({
-        parent,
-        child: (parent as any).child || null
-      }))
-      setParentChildRelations(relations)
-    } catch (error: any) {
-      toast.error('Error loading admin data: ' + error.message)
+      setParentChildRelations(relationData || [])
+    } catch (error: unknown) {
+      toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
     }
@@ -80,45 +54,27 @@ export function AdminScreen() {
 
   const deleteWorkout = async (workoutId: string, pointsToDeduct: number, userId: string) => {
     try {
-      // Delete the workout
-      const { error: deleteError } = await supabase
-        .from('workouts')
-        .delete()
-        .eq('id', workoutId)
-
-      if (deleteError) throw deleteError
-
-      // Update user's total points
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ 
-          total_points: Math.max(0, (profiles.find(p => p.id === userId)?.total_points || 0) - pointsToDeduct)
-        })
-        .eq('id', userId)
-
-      if (updateError) throw updateError
+      // Use the existing delete workout API endpoint which handles point adjustment
+      const { error } = await api.deleteWorkout(workoutId)
+      if (error) throw new Error(error)
 
       toast.success('Workout deleted and points adjusted')
       fetchData() // Refresh data
-    } catch (error: any) {
-      toast.error('Error deleting workout: ' + error.message)
+    } catch (error: unknown) {
+      toast.error('Error deleting workout: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
   const updateChildAssignment = async (parentId: string, childId: string | null) => {
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ child_id: childId })
-        .eq('id', parentId)
-
-      if (error) throw error
+      const { error } = await api.updateChildAssignment(parentId, childId)
+      if (error) throw new Error(error)
 
       toast.success('Child assignment updated!')
       fetchData() // Refresh data
       setEditingRelation(null)
-    } catch (error: any) {
-      toast.error('Error updating assignment: ' + error.message)
+    } catch (error: unknown) {
+      toast.error('Error updating assignment: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -159,21 +115,27 @@ export function AdminScreen() {
   }
 
   return (
-    <div className="p-4 lg:p-6 pb-20 lg:pb-0 max-w-6xl lg:mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-2">
-          <Shield className="w-8 h-8 text-red-500" />
-          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Admin Panel</h1>
+    <div className="h-full flex flex-col">
+      {/* Fixed Header */}
+      <div className="bg-white border-b border-gray-200 p-4 lg:p-6 flex-shrink-0">
+        <div className="max-w-6xl lg:mx-auto">
+          <div className="flex items-center gap-3 mb-2">
+            <Shield className="w-8 h-8 text-red-500" />
+            <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Admin Panel</h1>
+          </div>
+          <p className="text-gray-600">Manage player workouts and activity</p>
         </div>
-        <p className="text-gray-600">Manage player workouts and activity</p>
       </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-6xl lg:mx-auto">
 
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center gap-3">
-            <User className="w-8 h-8 text-blue-500" />
+            <UserIcon className="w-8 h-8 text-blue-500" />
             <div>
               <div className="text-2xl font-bold text-gray-900">{profiles.length}</div>
               <div className="text-sm text-gray-600">Total Players</div>
@@ -244,19 +206,16 @@ export function AdminScreen() {
           ) : (
             <div className="divide-y divide-gray-100">
               {parentChildRelations.map((relation, index) => (
-                <motion.div
+                <div
                   key={relation.parent.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.05 }}
                   className="p-4"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
                       {/* Parent Info */}
-                      {relation.parent.avatar_url ? (
+                      {relation.parent.avatarUrl ? (
                         <img
-                          src={relation.parent.avatar_url}
+                          src={relation.parent.avatarUrl}
                           alt="Parent"
                           className="w-10 h-10 rounded-full object-cover"
                         />
@@ -316,7 +275,7 @@ export function AdminScreen() {
                       )}
                     </div>
                   </div>
-                </motion.div>
+                </div>
               ))}
             </div>
           )}
@@ -336,7 +295,7 @@ export function AdminScreen() {
               <option value="all">All Players</option>
               {profiles.filter(p => p.role === 'player').map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {profile.name || profile.email.split('@')[0]} ({profile.total_points} pts)
+                  {profile.name || profile.email.split('@')[0]} ({profile.totalPoints || 0} pts)
                 </option>
               ))}
             </select>
@@ -357,19 +316,16 @@ export function AdminScreen() {
             ) : (
               <div className="divide-y divide-gray-100">
                 {filteredWorkouts.map((workout, index) => (
-                  <motion.div
+                  <div
                     key={workout.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
                     className="p-4 hover:bg-gray-50 transition-colors"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         {/* User Avatar */}
-                        {(workout.profiles as any)?.avatar_url ? (
+                        {(workout.user as any)?.avatarUrl ? (
                           <img
-                            src={(workout.profiles as any).avatar_url}
+                            src={(workout.user as any).avatarUrl}
                             alt="Profile"
                             className="w-10 h-10 rounded-full object-cover"
                           />
@@ -400,9 +356,7 @@ export function AdminScreen() {
                       </div>
 
                       {/* Delete Button */}
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
+                      <button
                         onClick={() => {
                           if (confirm(`Delete this ${workout.exercise_type} workout? This will deduct ${workout.points_earned} points from ${(workout.profiles as any)?.name || 'the player'}.`)) {
                             deleteWorkout(workout.id, workout.points_earned, workout.user_id)
@@ -411,15 +365,17 @@ export function AdminScreen() {
                         className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       >
                         <Trash2 className="w-5 h-5" />
-                      </motion.button>
+                      </button>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
               </div>
             )}
           </div>
         </>
       )}
+        </div>
+      </div>
     </div>
   )
 }

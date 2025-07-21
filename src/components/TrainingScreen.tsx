@@ -1,8 +1,7 @@
 import React, { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { Play, Award, Clock, Star } from 'lucide-react'
 import { exerciseTemplates } from '../data/exercises'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import toast from 'react-hot-toast'
 
@@ -30,17 +29,14 @@ export function TrainingScreen() {
       const durationNum = parseInt(duration)
       const pointsEarned = Math.floor(activeWorkout.basePoints * Math.min(durationNum / 10, 3)) // More time = more points (max 3x)
 
-      const { error } = await supabase
-        .from('workouts')
-        .insert({
-          user_id: user.id,
-          exercise_type: activeWorkout.type,
-          points_earned: pointsEarned,
-          duration_minutes: durationNum,
-          notes: notes || null
-        })
+      const { data, error } = await api.createWorkout({
+        exerciseType: activeWorkout.type,
+        pointsEarned: pointsEarned,
+        durationMinutes: durationNum,
+        notes: notes || null
+      })
 
-      if (error) throw error
+      if (error) throw new Error(error)
 
       toast.success(`Workout completed! +${pointsEarned} points!`)
       setActiveWorkout(null)
@@ -52,21 +48,27 @@ export function TrainingScreen() {
   }
 
   return (
-    <div className="p-4 lg:p-6 pb-20 lg:pb-0 max-w-4xl lg:mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">Training Programs</h1>
-        <div className="flex items-center gap-2 text-sm text-gray-600">
-          <Award className="w-4 h-4 text-orange-500" />
-          <span>Total Points: <span className="font-bold text-orange-600">{profile?.total_points || 0}</span></span>
+    <div className="h-full flex flex-col">
+      {/* Fixed Header */}
+      <div className="bg-white border-b border-gray-200 p-4 lg:p-6 flex-shrink-0">
+        <div className="max-w-4xl lg:mx-auto">
+          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900 mb-2">Training Programs</h1>
+          <div className="flex items-center gap-2 text-sm text-gray-600">
+            <Award className="w-4 h-4 text-orange-500" />
+            <span>Total Points: <span className="font-bold text-orange-600">{profile?.totalPoints || 0}</span></span>
+          </div>
         </div>
       </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto">
 
       {/* Filter buttons */}
       <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
         {['all', 'dribbling', 'shooting', 'conditioning'].map((type) => (
-          <motion.button
+          <button
             key={type}
-            whileTap={{ scale: 0.95 }}
             onClick={() => setSelectedType(type as any)}
             className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
               selectedType === type
@@ -75,18 +77,15 @@ export function TrainingScreen() {
             }`}
           >
             {type.charAt(0).toUpperCase() + type.slice(1)}
-          </motion.button>
+          </button>
         ))}
       </div>
 
       {/* Exercise cards */}
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3 lg:gap-6">
         {filteredExercises.map((exercise, index) => (
-          <motion.div
+          <div
             key={exercise.name}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
             className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
           >
             <div className="flex items-start justify-between mb-3">
@@ -103,34 +102,25 @@ export function TrainingScreen() {
               </div>
             </div>
             
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+            <button
               onClick={() => startWorkout(exercise)}
               className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all"
             >
               <Play className="w-4 h-4" />
               Start Training
-            </motion.button>
-          </motion.div>
+            </button>
+          </div>
         ))}
       </div>
 
       {/* Workout modal */}
-      <AnimatePresence>
-        {activeWorkout && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      {activeWorkout && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+        >
+          <div
+            className="bg-white rounded-2xl p-6 w-full max-w-md"
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-md"
-            >
               <div className="text-center mb-6">
                 <div className="text-4xl mb-2">{activeWorkout.icon}</div>
                 <h3 className="text-xl font-bold text-gray-900">{activeWorkout.name}</h3>
@@ -183,10 +173,11 @@ export function TrainingScreen() {
                   Complete
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      )}
+        </div>
+      </div>
     </div>
   )
 }

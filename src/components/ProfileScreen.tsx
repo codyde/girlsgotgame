@@ -1,44 +1,43 @@
 import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
-import { Edit2, Camera, Award, Calendar, Target, Users, User } from 'lucide-react'
+import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { supabase } from '../lib/supabase'
-import { Profile } from '../types'
+import { api } from '../lib/api'
+import { User } from '../types'
 import toast from 'react-hot-toast'
+import { uploadAvatar, validateFileSize } from '../lib/upload'
 
 export function ProfileScreen() {
   const { profile, updateProfile, user } = useAuth()
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingChild, setIsEditingChild] = useState(false)
   const [name, setName] = useState('')
-  const [players, setPlayers] = useState<Profile[]>([])
+  const [players, setPlayers] = useState<User[]>([])
   const [selectedChild, setSelectedChild] = useState('')
   const [manualEmail, setManualEmail] = useState('')
   const [showManualEntry, setShowManualEntry] = useState(false)
-  const [uploading, setUploading] = useState(false)
   const [loadingPlayers, setLoadingPlayers] = useState(false)
+
+  const [isUploading, setIsUploading] = useState(false)
 
   // Update state when profile changes
   useEffect(() => {
     if (profile) {
       setName(profile.name || '')
-      setSelectedChild(profile.child_id || '')
+      setSelectedChild(profile.childId || '')
     }
   }, [profile])
 
   const fetchPlayers = async () => {
     try {
       setLoadingPlayers(true)
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'player')
-        .order('name')
+      // Note: We'll need to add this endpoint to the API if we want to filter by role
+      // For now, we'll get the leaderboard which contains players
+      const { data, error } = await api.getLeaderboard()
 
-      if (error) throw error
+      if (error) throw new Error(error)
       setPlayers(data || [])
-    } catch (error: any) {
-      toast.error('Error loading players: ' + error.message)
+    } catch (error: unknown) {
+      toast.error('Error loading players: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoadingPlayers(false)
     }
@@ -46,7 +45,7 @@ export function ProfileScreen() {
 
   const handleEditChild = () => {
     setIsEditingChild(true)
-    setSelectedChild(profile?.child_id || '')
+    setSelectedChild(profile?.childId || '')
     setManualEmail('')
     setShowManualEntry(false)
     fetchPlayers()
@@ -59,23 +58,19 @@ export function ProfileScreen() {
       if (selectedChild) {
         childId = selectedChild
       } else if (manualEmail.trim()) {
-        // Find player by email
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('email', manualEmail.trim().toLowerCase())
-          .eq('role', 'player')
-          .single()
+        // For now, we'll search through the players list
+        // In a real app, you'd want a dedicated endpoint for this
+        const player = players.find(p => p.email.toLowerCase() === manualEmail.trim().toLowerCase())
         
-        if (error || !data) {
+        if (!player) {
           toast.error('Player not found with that email address')
           return
         }
         
-        childId = data.id
+        childId = player.id
       }
       
-      await updateProfile({ child_id: childId })
+      await updateProfile({ childId: childId })
       setIsEditingChild(false)
       
       if (childId) {
@@ -97,15 +92,13 @@ export function ProfileScreen() {
     }
   }
 
-  const uploadAvatar = async (file: File) => {
+  const handleUploadAvatar = async (file: File) => {
     try {
-      setUploading(true)
-      
       if (!user) throw new Error('No user logged in')
       
-      // Check file size (5MB limit)
-      if (file.size > 5 * 1024 * 1024) {
-        throw new Error('Image must be less than 5MB')
+      // Check file size (16MB limit)
+      if (!validateFileSize(file, 16)) {
+        throw new Error('Image must be less than 16MB')
       }
       
       // Check file type
@@ -113,32 +106,24 @@ export function ProfileScreen() {
         throw new Error('Please select an image file')
       }
       
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`
-      const filePath = `avatars/${fileName}`
+      setIsUploading(true)
+      console.log('🖼️ Starting avatar upload to R2:', file.name);
       
-      // Upload to Supabase storage
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file, {
-          upsert: false
-        })
+      const result = await uploadAvatar(file, (progress) => {
+        console.log(`📊 Upload progress: ${progress.percentage}%`);
+      });
       
-      if (uploadError) throw uploadError
-      
-      // Get public URL
-      const { data } = supabase.storage
-        .from('images')
-        .getPublicUrl(filePath)
+      console.log('🖼️ Avatar upload successful:', result.url);
       
       // Update profile with new avatar URL
-      await updateProfile({ avatar_url: data.publicUrl })
+      await updateProfile({ avatarUrl: result.url })
       
       toast.success('Profile photo updated!')
-    } catch (error: any) {
-      toast.error(error.message)
+    } catch (error: unknown) {
+      console.error('🖼️ Avatar upload error:', error);
+      toast.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setUploading(false)
+      setIsUploading(false)
     }
   }
   
@@ -149,7 +134,7 @@ export function ProfileScreen() {
     input.onchange = (e) => {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (file) {
-        uploadAvatar(file)
+        handleUploadAvatar(file)
       }
     }
     input.click()
@@ -172,51 +157,53 @@ export function ProfileScreen() {
       <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 lg:px-6 pt-6 lg:pt-8 pb-16 lg:pb-20">
         <div className="flex items-center justify-between text-white">
           <h1 className="text-2xl lg:text-3xl font-bold">My Profile</h1>
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => setIsEditing(!isEditing)}
             className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition-colors"
           >
             <Edit2 className="w-5 h-5" />
-          </motion.button>
+          </button>
         </div>
       </div>
 
       {/* Profile card - overlapping the header */}
       <div className="px-4 lg:px-6 -mt-12 lg:-mt-16 mb-6 max-w-2xl lg:mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
           className="bg-white rounded-2xl shadow-xl p-6 lg:p-8"
         >
           {/* Avatar section */}
           <div className="text-center mb-6">
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
+            <div
               onClick={handleAvatarClick}
-              className={`relative inline-block cursor-pointer ${uploading ? 'opacity-50' : ''}`}
+              className={`relative inline-block cursor-pointer ${isUploading ? 'opacity-50' : ''}`}
             >
-              {profile.avatar_url ? (
-                <img
-                  src={profile.avatar_url}
-                  alt="Profile"
-                  className="w-24 h-24 rounded-full object-cover mx-auto mb-4 shadow-lg"
-                />
+              {profile.avatarUrl ? (
+                <>
+                  {console.log('🖼️ Rendering avatar with URL:', profile.avatarUrl)}
+                  <img
+                    src={profile.avatarUrl}
+                    alt="Profile"
+                    className="w-24 h-24 rounded-full object-cover mx-auto mb-4 shadow-lg"
+                    style={{ 
+                      imageRendering: 'high-quality',
+                      colorInterpolation: 'sRGB'
+                    }}
+                  />
+                </>
               ) : (
                 <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-lg">
                   {profile.name?.[0]?.toUpperCase() || profile.email[0].toUpperCase()}
                 </div>
               )}
-              <div className={`absolute bottom-3 right-0 bg-white p-2 rounded-full shadow-lg ${uploading ? 'animate-pulse' : ''}`}>
+              <div className={`absolute bottom-3 right-0 bg-white p-2 rounded-full shadow-lg ${isUploading ? 'animate-pulse' : ''}`}>
                 <Camera className="w-4 h-4 text-gray-600" />
               </div>
-              {uploading && (
+              {isUploading && (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
                 </div>
               )}
-            </motion.div>
+            </div>
 
             {isEditing ? (
               <div className="space-y-3">
@@ -254,10 +241,7 @@ export function ProfileScreen() {
 
           {/* Parent-specific child assignment */}
           {profile.role === 'parent' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.15 }}
+            <div
               className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6"
             >
               <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -291,7 +275,7 @@ export function ProfileScreen() {
                             <option value="">No child selected</option>
                             {players.map((player) => (
                               <option key={player.id} value={player.id}>
-                                {player.name || player.email.split('@')[0]} ({player.total_points} points)
+                                {player.name || player.email.split('@')[0]} ({player.totalPoints || 0} points)
                               </option>
                             ))}
                           </select>
@@ -343,9 +327,9 @@ export function ProfileScreen() {
               ) : (
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <User className="w-8 h-8 text-gray-400" />
+                    <UserIcon className="w-8 h-8 text-gray-400" />
                     <div>
-                      {profile.child_id ? (
+                      {profile.childId ? (
                         <>
                           <p className="font-medium text-gray-900">Child assigned</p>
                           <p className="text-sm text-gray-600">Tracking a player's progress</p>
@@ -362,18 +346,18 @@ export function ProfileScreen() {
                     onClick={handleEditChild}
                     className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors"
                   >
-                    {profile.child_id ? 'Change' : 'Assign'}
+                    {profile.childId ? 'Change' : 'Assign'}
                   </button>
                 </div>
               )}
-            </motion.div>
+            </div>
           )}
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-orange-50 rounded-xl p-4 text-center">
               <Award className="w-6 h-6 text-orange-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-orange-600">{profile.total_points}</div>
+              <div className="text-2xl font-bold text-orange-600">{profile.totalPoints || 0}</div>
               <div className="text-sm text-orange-700">Total Points</div>
             </div>
             <div className="bg-green-50 rounded-xl p-4 text-center">
@@ -382,16 +366,13 @@ export function ProfileScreen() {
               <div className="text-sm text-green-700">This Week</div>
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
 
       {/* Activity sections */}
       <div className="px-4 lg:px-6 space-y-4 lg:space-y-6 max-w-2xl lg:mx-auto">
         {/* Recent activity */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
+        <div
           className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
         >
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
@@ -402,26 +383,23 @@ export function ProfileScreen() {
             <div className="text-gray-400 text-sm">No recent activity</div>
             <p className="text-xs text-gray-500 mt-1">Start training to see your progress here!</p>
           </div>
-        </motion.div>
+        </div>
 
 
         {/* Profile stats */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+        <div
           className="bg-gradient-to-r from-orange-50 to-green-50 rounded-xl p-4 border border-orange-200"
         >
           <div className="text-center">
             <h3 className="font-semibold text-gray-900 mb-2">Member Since</h3>
             <p className="text-gray-600">
-              {new Date(profile.created_at).toLocaleDateString('en-US', {
+              {new Date(profile.createdAt).toLocaleDateString('en-US', {
                 month: 'long',
                 year: 'numeric'
               })}
             </p>
           </div>
-        </motion.div>
+        </div>
       </div>
     </div>
   )

@@ -1,23 +1,15 @@
 import React, { useState } from 'react'
-import { motion } from 'framer-motion'
-import { supabase } from '../lib/supabase'
+import { useAuth } from '../hooks/useAuth'
 import toast from 'react-hot-toast'
 
 export function AuthScreen() {
   const [loading, setLoading] = useState(false)
-
+  const { signInWithGoogle } = useAuth()
 
   const handleGoogleSignIn = async () => {
     try {
       setLoading(true)
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: window.location.origin
-        }
-      })
-      
-      if (error) throw error
+      signInWithGoogle()
     } catch (error: any) {
       console.error('Google sign-in error:', error)
       toast.error('Failed to sign in with Google')
@@ -25,11 +17,9 @@ export function AuthScreen() {
     }
   }
 
-
-
   // Show loading message if we're processing OAuth callback
   const urlParams = new URLSearchParams(window.location.search)
-  const hasTokens = urlParams.get('access_token') || urlParams.get('token_hash') || urlParams.get('type') || urlParams.get('code')
+  const hasTokens = urlParams.get('callback') === 'auth'
   
   if (hasTokens) {
     return (
@@ -42,20 +32,15 @@ export function AuthScreen() {
         ></div>
         <div className="absolute inset-0 bg-gradient-to-br from-orange-500/80 to-purple-600/80"></div>
         
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
+        <div
           className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 lg:p-10 w-full max-w-md lg:max-w-lg border border-white/20"
         >
           <div className="text-center">
-            <motion.div
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.2 }}
+            <div
               className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4 shadow-lg"
             >
               <span className="text-2xl">🏀</span>
-            </motion.div>
+            </div>
             <h1 className="text-2xl font-bold text-gray-900 mb-4">
               Signing you in...
             </h1>
@@ -64,7 +49,7 @@ export function AuthScreen() {
               Processing authentication...
             </p>
           </div>
-        </motion.div>
+        </div>
       </div>
     )
   }
@@ -80,20 +65,15 @@ export function AuthScreen() {
       ></div>
       <div className="absolute inset-0 bg-gradient-to-br from-orange-500/80 to-purple-600/80"></div>
       
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
+      <div
         className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 lg:p-10 w-full max-w-md lg:max-w-lg border border-white/20"
       >
         <div className="text-center mb-8">
-          <motion.div
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ delay: 0.2 }}
+          <div
             className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4 shadow-lg"
           >
             <span className="text-2xl">🏀</span>
-          </motion.div>
+          </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">
             Girls Got Game
           </h1>
@@ -104,9 +84,7 @@ export function AuthScreen() {
 
         {/* Google Sign In Button */}
         <div className="mb-8">
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+          <button
             onClick={handleGoogleSignIn}
             disabled={loading}
             className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50 flex items-center justify-center gap-3"
@@ -118,7 +96,7 @@ export function AuthScreen() {
               <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
             </svg>
             {loading ? 'Signing in...' : 'Continue with Google'}
-          </motion.button>
+          </button>
         </div>
 
         <div className="text-center">
@@ -126,7 +104,7 @@ export function AuthScreen() {
             Secure authentication with Google - no passwords needed!
           </p>
         </div>
-      </motion.div>
+      </div>
     </div>
   )
 }

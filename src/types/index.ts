@@ -1,16 +1,21 @@
-export interface Profile {
+export interface User {
   id: string
   email: string
   name: string | null
-  avatar_url: string | null
-  total_points: number
+  emailVerified: boolean
+  image: string | null
+  avatarUrl: string | null
+  totalPoints: number
   role: 'parent' | 'player'
-  child_id: string | null
-  is_onboarded: boolean
-  jersey_number: number | null
-  created_at: string
-  updated_at: string
+  childId: string | null
+  isOnboarded: boolean
+  jerseyNumber: number | null
+  createdAt: string
+  updatedAt: string
 }
+
+// Keep Profile as alias for backwards compatibility during migration
+export type Profile = User
 
 export interface Workout {
   id: string
@@ -29,7 +34,7 @@ export interface Post {
   image_url: string | null
   workout_id: string | null
   created_at: string
-  profiles?: Profile
+  user?: User
   workouts?: Workout
 }
 

@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
 import { Trophy, Award, TrendingUp } from 'lucide-react'
-import { supabase } from '../lib/supabase'
-import { Profile } from '../types'
+import { api } from '../lib/api'
+import { User } from '../types'
 import toast from 'react-hot-toast'
 
 export function LeaderboardScreen() {
-  const [profiles, setProfiles] = useState<Profile[]>([])
+  const [profiles, setProfiles] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -15,14 +14,9 @@ export function LeaderboardScreen() {
 
   const fetchProfiles = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'player') // Only show players, not parents
-        .order('total_points', { ascending: false })
-        .limit(20)
+      const { data, error } = await api.getLeaderboard()
 
-      if (error) throw error
+      if (error) throw new Error(error)
       setProfiles(data || [])
     } catch (error: any) {
       toast.error('Error loading leaderboard: ' + error.message)
@@ -88,13 +82,13 @@ export function LeaderboardScreen() {
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-green-600">
-              {profiles.reduce((sum, p) => sum + p.total_points, 0)}
+              {profiles.reduce((sum, p) => sum + (p.totalPoints || 0), 0)}
             </div>
             <div className="text-sm text-gray-600">Total Points</div>
           </div>
           <div className="text-center">
             <div className="text-2xl font-bold text-blue-600">
-              {Math.round(profiles.reduce((sum, p) => sum + p.total_points, 0) / Math.max(profiles.length, 1))}
+              {Math.round(profiles.reduce((sum, p) => sum + (p.totalPoints || 0), 0) / Math.max(profiles.length, 1))}
             </div>
             <div className="text-sm text-gray-600">Avg Points</div>
           </div>
@@ -111,11 +105,8 @@ export function LeaderboardScreen() {
           </div>
         ) : (
           profiles.map((profile, index) => (
-            <motion.div
+            <div
               key={profile.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
               className={`relative overflow-hidden rounded-xl shadow-sm border ${
                 index < 3 ? 'border-orange-200' : 'border-gray-200'
               }`}
@@ -129,9 +120,9 @@ export function LeaderboardScreen() {
                   </div>
 
                   {/* Avatar */}
-                  {profile.avatar_url ? (
+                  {profile.avatarUrl ? (
                     <img
-                      src={profile.avatar_url}
+                      src={profile.avatarUrl}
                       alt="Profile"
                       className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
                     />
@@ -148,31 +139,31 @@ export function LeaderboardScreen() {
                     </h3>
                     <div className="flex items-center gap-2 text-sm text-gray-600">
                       <Award className="w-4 h-4 text-orange-500" />
-                      <span>{profile.total_points} points</span>
+                      <span>{profile.totalPoints || 0} points</span>
                     </div>
                   </div>
 
                   {/* Points badge */}
                   <div className={`px-3 py-1 rounded-full text-white font-semibold bg-gradient-to-r ${getRankColor(index)}`}>
-                    {profile.total_points}
+                    {profile.totalPoints || 0}
                   </div>
                 </div>
 
                 {/* Progress bar for top 3 */}
-                {index < 3 && profiles[0]?.total_points > 0 && (
+                {index < 3 && (profiles[0]?.totalPoints || 0) > 0 && (
                   <div className="mt-3">
                     <div className="w-full bg-gray-200 rounded-full h-2">
                       <div
                         className={`h-2 rounded-full bg-gradient-to-r ${getRankColor(index)}`}
                         style={{
-                          width: `${(profile.total_points / profiles[0].total_points) * 100}%`
+                          width: `${((profile.totalPoints || 0) / (profiles[0]?.totalPoints || 1)) * 100}%`
                         }}
                       ></div>
                     </div>
                   </div>
                 )}
               </div>
-            </motion.div>
+            </div>
           ))
         )}
       </div>

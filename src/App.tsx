@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
+import { SessionProvider } from './contexts/SessionContext'
 import { useAuth } from './hooks/useAuth'
 import { AuthScreen } from './components/AuthScreen'
-import { OnboardingScreen } from './components/OnboardingScreen'
+import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
 import { TrainingScreen } from './components/TrainingScreen'
@@ -12,17 +13,33 @@ import { AdminScreen } from './components/AdminScreen'
 import { Navigation } from './components/Navigation'
 
 function AppContent() {
-  const { session, profile } = useAuth()
+  const { session, profile, loading } = useAuth()
   const [currentTab, setCurrentTab] = useState('feed')
   const [showOnboarding, setShowOnboarding] = useState(false)
 
   // Watch for profile changes and set onboarding state based on database value
   useEffect(() => {
     if (profile) {
-      console.log('🔄 AppContent: Profile loaded, is_onboarded:', profile.is_onboarded)
-      setShowOnboarding(!profile.is_onboarded)
+      setShowOnboarding(!profile.isOnboarded)
     }
   }, [profile])
+
+  // Show loading screen during auth checks
+  if (loading) {
+    return (
+      <>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-4 mx-auto">
+              🏀
+            </div>
+            <div className="text-lg font-semibold text-gray-700">Loading...</div>
+          </div>
+        </div>
+        <Toaster position="top-center" />
+      </>
+    )
+  }
 
   // Show login screen if not authenticated
   if (!session) {
@@ -34,7 +51,6 @@ function AppContent() {
     )
   }
 
-  console.log('🔍 AppContent: showOnboarding state:', showOnboarding)
 
   const renderCurrentScreen = () => {
     switch (currentTab) {
@@ -92,18 +108,21 @@ function AppContent() {
       </div>
       <Toaster position="top-center" />
       
-      {/* Onboarding Screen */}
-      {showOnboarding && (
-        <div className="fixed inset-0 z-50">
-          <OnboardingScreen />
-        </div>
-      )}
+      {/* Onboarding Modal */}
+      <OnboardingModal 
+        isOpen={showOnboarding} 
+        onClose={() => setShowOnboarding(false)}
+      />
     </div>
   )
 }
 
 function App() {
-  return <AppContent />
+  return (
+    <SessionProvider>
+      <AppContent />
+    </SessionProvider>
+  )
 }
 
 export default App

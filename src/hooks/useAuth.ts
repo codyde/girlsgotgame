@@ -1,163 +1,168 @@
-import { useState, useEffect } from 'react'
-import { Session, User } from '@supabase/supabase-js'
-import { supabase } from '../lib/supabase'
-import { Profile } from '../types'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { api } from '../lib/api'
+import { User } from '../types'
+import { useSession } from '../contexts/SessionContext'
 import toast from 'react-hot-toast'
 
+interface AuthUser {
+  id: string
+  email: string
+  name?: string
+}
+
+interface Session {
+  user: AuthUser
+}
+
 export function useAuth() {
+  const { setSession: setGlobalSession } = useSession()
   const [session, setSession] = useState<Session | null>(null)
-  const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [profile, setProfile] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const fetchingProfile = useRef(false)
+  const checkingSession = useRef(false)
+  const initialized = useRef(false)
 
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      
-      if (session?.user) {
-        fetchOrCreateProfile(session.user.id, session.user.email || '')
-      } else {
-        setLoading(false)
-      }
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
-        setSession(session)
-        setUser(session?.user ?? null)
-        
-        if (session?.user) {
-          await fetchOrCreateProfile(session.user.id, session.user.email || '')
-        } else {
-          setProfile(null)
-          setLoading(false)
-        }
-      }
-    )
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const fetchOrCreateProfile = async (userId: string, email: string) => {
+  const fetchProfile = useCallback(async (userId: string, email: string) => {
+    if (fetchingProfile.current) return // Prevent multiple simultaneous calls
+    
     try {
+      fetchingProfile.current = true
       setLoading(true)
-      console.log('🔍 fetchOrCreateProfile: Starting for userId:', userId)
       
-      // Try to fetch existing profile
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle()
+      // Fetch user profile from the unified user table
+      const { data, error } = await api.getProfile()
 
-      console.log('🔍 fetchOrCreateProfile: Database response:', { data, error })
-
-      if (!data && !error) {
-        console.log('🔍 fetchOrCreateProfile: No profile found, creating new one')
-        // Profile doesn't exist, create one
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: userId,
-            email,
-            name: null,
-            role: 'player',
-            is_onboarded: false,
-            total_points: 0
-          })
-          .select()
-          .maybeSingle()
-
-        if (createError) {
-          // Handle duplicate key error (profile already exists from another session)
-          if (createError.code === '23505') {
-            // Try to fetch again
-            const { data: existingProfile } = await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', userId)
-              .maybeSingle()
-            
-            setProfile(existingProfile)
-          } else {
-            throw createError
-          }
-        } else {
-          setProfile(newProfile)
+      if (error) {
+        // Only show errors that aren't expected auth failures
+        if (!error.includes('401') && !error.includes('Unauthorized') && !error.includes('Not authenticated')) {
+          console.error('Error loading profile:', error)
+          toast.error('Error loading profile')
         }
-      } else if (error) {
-        console.log('🔍 fetchOrCreateProfile: Database error:', error)
-        throw error
       } else {
-        console.log('🔍 fetchOrCreateProfile: Profile found, setting profile:', data)
         setProfile(data)
       }
     } catch (error: any) {
-      console.error('🔴 fetchOrCreateProfile: Error with profile:', error)
-      toast.error('Error loading profile')
+      // Only log and show unexpected errors
+      if (!error.message?.includes('401') && !error.message?.includes('Unauthorized') && !error.message?.includes('Not authenticated')) {
+        console.error('Error loading profile:', error)
+        toast.error('Error loading profile')
+      }
     } finally {
-      console.log('🔍 fetchOrCreateProfile: Setting loading to false')
       setLoading(false)
+      fetchingProfile.current = false
     }
-  }
+  }, [])
 
-  const updateProfile = async (updates: Partial<Profile>) => {
+  const checkSession = useCallback(async () => {
+    if (checkingSession.current) return // Prevent multiple simultaneous calls
+    
+    try {
+      checkingSession.current = true
+      const { data: sessionData, error } = await api.getCurrentSession()
+      
+      if (error || !sessionData) {
+        // Only log non-auth errors (401, Unauthorized, Not authenticated are expected when not logged in)
+        if (error && !error.includes('401') && !error.includes('Unauthorized') && !error.includes('Not authenticated')) {
+          console.error('Session check error:', error)
+        }
+        setSession(null)
+        setUser(null)
+        setProfile(null)
+        setGlobalSession(null)
+        setLoading(false)
+        return
+      }
+
+      const userSession = {
+        user: {
+          id: sessionData.user.id,
+          email: sessionData.user.email,
+          name: sessionData.user.name
+        }
+      }
+
+      setSession(userSession)
+      setUser(userSession.user)
+      
+      // Update global session context for UploadThing
+      setGlobalSession({
+        userId: userSession.user.id,
+        email: userSession.user.email,
+        name: userSession.user.name
+      })
+
+      // Fetch profile
+      await fetchProfile(userSession.user.id, userSession.user.email)
+    } catch (error) {
+      // Only log unexpected errors (not auth-related ones)
+      console.error('Unexpected session check error:', error)
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      setGlobalSession(null)
+      setLoading(false)
+    } finally {
+      checkingSession.current = false
+    }
+  }, [fetchProfile])
+
+  useEffect(() => {
+    if (initialized.current) return // Only initialize once
+    initialized.current = true
+    
+    // Check for auth redirect callback
+    const urlParams = new URLSearchParams(window.location.search)
+    if (urlParams.get('callback') === 'auth') {
+      // Remove callback param from URL
+      window.history.replaceState({}, document.title, window.location.pathname)
+      // If we have auth callback, check session immediately
+      checkSession()
+    } else {
+      // Delay initial auth check slightly to avoid immediate 401 noise on fresh page load
+      setTimeout(checkSession, 100)
+    }
+
+    // Disable periodic session check to prevent unwanted refreshes
+    // const interval = setInterval(checkSession, 60000) // Check every minute
+    // return () => clearInterval(interval)
+  }, [checkSession])
+
+  const updateProfile = async (updates: Partial<User>) => {
     try {
       if (!user) throw new Error('No user logged in')
 
-      console.log('🔵 updateProfile called with:', updates)
-      console.log('🔵 Current profile before update:', profile)
-
       // Optimistic update: immediately update UI  
-      const previousProfile = profile // Used in catch block for error recovery
       setProfile(prevProfile => {
         if (!prevProfile) return prevProfile
         return {
           ...prevProfile,
           ...updates,
-          updated_at: new Date().toISOString(),
-          _updated: new Date().getTime() // Force new object reference
+          updatedAt: new Date().toISOString(),
+          _updated: new Date().getTime()
         }
       })
 
-      const { data, error } = await supabase
-        .from('profiles')
-        .update(updates)
-        .eq('id', user.id)
-        .select()
-        .maybeSingle()
+      const { data, error } = await api.updateProfile(updates)
 
-      console.log('🔵 Database response:', { data, error })
+      if (error) throw new Error(error)
 
-      if (error) throw error
-
-      console.log('🔵 Setting final profile state:', data)
-      console.log('🔵 New profile is_onboarded value:', data?.is_onboarded)
-      // Update with the real data from the database
-      setProfile(prevProfile => {
-        console.log('🔵 Previous profile in setter:', prevProfile)
-        console.log('🔵 New profile in setter:', data)
+      // Update with the real data from the API
+      setProfile(() => {
         const newProfile = { 
           ...data, 
-          // Add a timestamp to force a completely new object
           _updated: new Date().getTime() 
         }
-        console.log('🔵 Final profile with timestamp:', newProfile)
         return newProfile
       })
       
-      console.log('🔵 Profile state updated with functional setter!')
       toast.success('Profile updated successfully!')
     } catch (error: any) {
       console.error('Update profile error:', error)
       
-      // Revert optimistic update on error
-      if (previousProfile) {
-        setProfile(previousProfile)
-      }
+      // Revert optimistic update on error - refetch profile
+      await fetchProfile(user.id, user.email)
       
       toast.error('Failed to update profile')
       throw error
@@ -166,21 +171,51 @@ export function useAuth() {
 
   const signOut = async () => {
     try {
-      setLoading(true)
+      const { error } = await api.signOut()
+      if (error) throw new Error(error)
       
-      const { error } = await supabase.auth.signOut()
-      if (error) throw error
-      
-      // State will be cleared by the auth state change listener
       toast.success('Signed out successfully!')
     } catch (error: any) {
       console.error('Sign out error:', error)
       toast.error('Error signing out')
-      setLoading(false)
+    } finally {
+      // Force page refresh to return to login screen
+      setTimeout(() => {
+        window.location.reload()
+      }, 100) // Brief delay to show the toast message
     }
   }
 
-  console.log('🔵 useAuth returning profile:', profile)
+  const signInWithGoogle = async () => {
+    try {
+      // POST request to Better Auth social sign-in endpoint
+      const baseUrl = import.meta.env.VITE_API_URL || 
+        (import.meta.env.PROD ? 'https://api.girlsgotgame.app' : 'http://localhost:3001');
+      const response = await fetch(`${baseUrl}/api/auth/sign-in/social`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          provider: 'google',
+          callbackURL: window.location.origin + '?callback=auth'
+        })
+      });
+
+      const data = await response.json();
+      
+      if (data.url) {
+        // Redirect to Google OAuth
+        window.location.href = data.url;
+      } else {
+        throw new Error('No redirect URL received');
+      }
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      toast.error('Error starting Google sign-in');
+    }
+  }
   
   return {
     session,
@@ -189,5 +224,6 @@ export function useAuth() {
     loading,
     updateProfile,
     signOut,
+    signInWithGoogle,
   }
 }

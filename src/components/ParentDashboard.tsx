@@ -1,42 +1,38 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { User, Trophy, Calendar, Target, Clock, Award } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { User as UserIcon, Trophy, Calendar, Target, Clock, Award } from 'lucide-react'
+import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
-import { Profile, Workout } from '../types'
+import { User, Workout } from '../types'
 import toast from 'react-hot-toast'
 
-interface WorkoutWithProfile extends Workout {
-  profiles?: Profile
+interface WorkoutWithUser extends Workout {
+  user?: User
 }
 
 export function ParentDashboard() {
   const { profile, updateProfile } = useAuth()
-  const [players, setPlayers] = useState<Profile[]>([])
-  const [childWorkouts, setChildWorkouts] = useState<WorkoutWithProfile[]>([])
+  const [players, setPlayers] = useState<User[]>([])
+  const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
 
   useEffect(() => {
     fetchPlayers()
-    if (profile?.child_id) {
-      setSelectedChild(profile.child_id)
-      fetchChildWorkouts(profile.child_id)
+    if (profile?.childId) {
+      setSelectedChild(profile.childId)
+      fetchChildWorkouts(profile.childId)
     }
   }, [profile])
 
   const fetchPlayers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('role', 'player')
-        .order('name')
+      const { data, error } = await api.getPlayerProfiles()
 
-      if (error) throw error
+      if (error) throw new Error(error)
       setPlayers(data || [])
-    } catch (error: any) {
-      toast.error('Error loading players: ' + error.message)
+    } catch (error: unknown) {
+      toast.error('Error loading players: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
     }
@@ -44,20 +40,12 @@ export function ParentDashboard() {
 
   const fetchChildWorkouts = async (childId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('workouts')
-        .select(`
-          *,
-          profiles:user_id (name, email, avatar_url)
-        `)
-        .eq('user_id', childId)
-        .order('created_at', { ascending: false })
-        .limit(20)
+      const { data, error } = await api.getWorkoutsByUserId(childId, 20, 0)
 
-      if (error) throw error
+      if (error) throw new Error(error)
       setChildWorkouts(data || [])
-    } catch (error: any) {
-      toast.error('Error loading child workouts: ' + error.message)
+    } catch (error: unknown) {
+      toast.error('Error loading child workouts: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -106,7 +94,7 @@ export function ParentDashboard() {
         {/* Child Selection */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <User className="w-5 h-5 text-blue-500" />
+            <UserIcon className="w-5 h-5 text-blue-500" />
             Select Your Child
           </h3>
           
@@ -124,16 +112,16 @@ export function ParentDashboard() {
               <option value="">Select a player...</option>
               {players.map((player) => (
                 <option key={player.id} value={player.id}>
-                  {player.name || player.email.split('@')[0]} ({player.total_points} points)
+                  {player.name || player.email.split('@')[0]} ({player.totalPoints || 0} points)
                 </option>
               ))}
             </select>
             
-            {profile?.child_id && selectedChildProfile && (
+            {profile?.childId && selectedChildProfile && (
               <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
-                {selectedChildProfile.avatar_url ? (
+                {selectedChildProfile.avatarUrl ? (
                   <img
-                    src={selectedChildProfile.avatar_url}
+                    src={selectedChildProfile.avatarUrl}
                     alt="Child"
                     className="w-10 h-10 rounded-full object-cover"
                   />
@@ -146,7 +134,7 @@ export function ParentDashboard() {
                   <p className="font-semibold text-green-800">
                     Currently tracking: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
                   </p>
-                  <p className="text-sm text-green-600">{selectedChildProfile.total_points} total points</p>
+                  <p className="text-sm text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
                 </div>
               </div>
             )}
@@ -160,7 +148,7 @@ export function ParentDashboard() {
               <div className="flex items-center gap-3">
                 <Trophy className="w-8 h-8 text-orange-500" />
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">{selectedChildProfile.total_points}</div>
+                  <div className="text-2xl font-bold text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
                   <div className="text-sm text-gray-600">Total Points</div>
                 </div>
               </div>

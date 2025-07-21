@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send } from 'lucide-react'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { Post } from '../types'
 import toast from 'react-hot-toast'
+import { uploadMedia, validateFileSize } from '../lib/upload'
 
 interface Comment {
   id: string
@@ -12,9 +12,10 @@ interface Comment {
   user_id: string
   content: string
   created_at: string
-  profiles?: {
+  createdAt?: string
+  user?: {
     name: string | null
-    avatar_url: string | null
+    avatarUrl: string | null
     email: string
   }
 }
@@ -26,348 +27,234 @@ interface Like {
   created_at: string
 }
 
+// Helper function to detect video URLs
+const isVideoUrl = (url: string): boolean => {
+  // Check for common video file extensions
+  const videoExtensions = ['.mp4', '.mov', '.webm', '.avi', '.mkv', '.m4v', '.3gp'];
+  const lowercaseUrl = url.toLowerCase();
+  
+  // Check file extensions
+  if (videoExtensions.some(ext => lowercaseUrl.includes(ext))) {
+    return true;
+  }
+  
+  // Check MIME type if available in URL (some services include it)
+  if (lowercaseUrl.includes('video/')) {
+    return true;
+  }
+  
+  return false;
+};
+
+// Component to handle media rendering with content type detection
+const MediaRenderer = ({ url, isOptimisticVideo }: { url: string, isOptimisticVideo?: boolean }) => {
+  const [mediaType, setMediaType] = useState<'video' | 'image' | 'unknown'>(
+    isOptimisticVideo ? 'video' : isVideoUrl(url) ? 'video' : 'unknown'
+  );
+
+  useEffect(() => {
+    // If we don't know the type, check the content type via HEAD request
+    if (mediaType === 'unknown') {
+      fetch(url, { method: 'HEAD' })
+        .then(response => {
+          const contentType = response.headers.get('content-type') || '';
+          if (contentType.startsWith('video/')) {
+            setMediaType('video');
+          } else {
+            setMediaType('image');
+          }
+        })
+        .catch(() => {
+          // If HEAD request fails, assume it's an image
+          setMediaType('image');
+        });
+    }
+  }, [url, mediaType]);
+
+  if (mediaType === 'video') {
+    return (
+      <video
+        src={url}
+        className="w-full h-auto max-h-96 object-contain rounded-none bg-black"
+        controls
+        preload="metadata"
+        playsInline
+        controlsList="nodownload"
+      >
+        Your browser does not support the video tag.
+      </video>
+    );
+  }
+
+  if (mediaType === 'image') {
+    return (
+      <img
+        src={url}
+        alt="Post content"
+        className="w-full h-auto max-h-96 object-cover"
+        loading="lazy"
+        style={{ 
+          imageRendering: 'high-quality',
+          colorInterpolation: 'sRGB'
+        }}
+      />
+    );
+  }
+
+  // Loading state while determining media type
+  return (
+    <div className="w-full h-48 bg-gray-200 animate-pulse flex items-center justify-center">
+      <span className="text-gray-500">Loading media...</span>
+    </div>
+  );
+};
+
 export function FeedScreen() {
   const { user, profile } = useAuth()
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState('')
-  const [selectedImage, setSelectedImage] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [filePreview, setFilePreview] = useState<string | null>(null)
+  const [fileType, setFileType] = useState<'image' | 'video' | null>(null)
   const [showNewPost, setShowNewPost] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState(false)
   const [likes, setLikes] = useState<Record<string, Like[]>>({})
   const [comments, setComments] = useState<Record<string, Comment[]>>({})
   const [showComments, setShowComments] = useState<Record<string, boolean>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const fetchAllLikes = useCallback(async (postIds: string[]) => {
-    try {
-      const { data, error } = await supabase
-        .from('likes')
-        .select('*')
-        .in('post_id', postIds)
-
-      if (error) throw error
-      
-      // Group likes by post_id
-      const likesByPost: Record<string, Like[]> = {}
-      data?.forEach(like => {
-        if (!likesByPost[like.post_id]) {
-          likesByPost[like.post_id] = []
-        }
-        likesByPost[like.post_id].push(like)
-      })
-      
-      setLikes(likesByPost)
-    } catch (error) {
-      console.error('Error fetching likes:', error)
-    }
+  // Helper function to close modal and reset state
+  const closeModal = useCallback(() => {
+    setShowNewPost(false)
+    setSelectedFile(null)
+    setFilePreview(null)
+    setFileType(null)
+    setNewPost('')
   }, [])
 
-  const fetchAllComments = useCallback(async (postIds: string[]) => {
-    try {
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`
-          *,
-          profiles:user_id (name, avatar_url, email)
-        `)
-        .in('post_id', postIds)
-        .order('created_at', { ascending: true })
+  const [isUploading, setIsUploading] = useState(false)
 
-      if (error) throw error
-      
-      // Group comments by post_id
-      const commentsByPost: Record<string, Comment[]> = {}
-      data?.forEach(comment => {
-        if (!commentsByPost[comment.post_id]) {
-          commentsByPost[comment.post_id] = []
-        }
-        commentsByPost[comment.post_id].push(comment)
-      })
-      
-      setComments(commentsByPost)
-    } catch (error) {
-      console.error('Error fetching comments:', error)
-    }
-  }, [])
 
   const fetchPosts = useCallback(async () => {
     try {
-      const { data: postsData, error: postsError } = await supabase
-        .from('posts')
-        .select(`
-          *,
-          profiles:user_id (name, avatar_url, email),
-          workouts:workout_id (exercise_type, points_earned, duration_minutes)
-        `)
-        .order('created_at', { ascending: false })
+      const { data: postsData, error: postsError } = await api.getFeed()
 
-      if (postsError) throw postsError
+      if (postsError) throw new Error(postsError)
+      
+      // The new API returns posts with likes and comments included
       setPosts(postsData || [])
       
-      // Batch fetch likes and comments for all posts if we have any
+      // Extract likes and comments from the response
       if (postsData && postsData.length > 0) {
-        const postIds = postsData.map(post => post.id)
-        await Promise.all([
-          fetchAllLikes(postIds),
-          fetchAllComments(postIds)
-        ])
+        const likesByPost: Record<string, Like[]> = {}
+        const commentsByPost: Record<string, Comment[]> = {}
+        
+        postsData.forEach(post => {
+          if (post.likes) {
+            likesByPost[post.id] = post.likes
+          }
+          if (post.comments) {
+            commentsByPost[post.id] = post.comments
+          }
+        })
+        
+        setLikes(likesByPost)
+        setComments(commentsByPost)
       }
     } catch (error) {
       toast.error('Error loading posts: ' + String(error))
     } finally {
       setLoading(false)
     }
-  }, [fetchAllLikes, fetchAllComments])
+  }, [])
 
 
-  // Set up realtime subscriptions
+  // Set up feed loading
   useEffect(() => {
     fetchPosts()
 
-    console.log('🔄 Setting up realtime subscriptions...')
 
-    // Create a helper function to fetch single post within the useEffect scope
-    const fetchSinglePostLocal = async (postId: string) => {
-      try {
-        const { data, error } = await supabase
-          .from('posts')
-          .select(`
-            *,
-            profiles:user_id (name, avatar_url, email),
-            workouts:workout_id (exercise_type, points_earned, duration_minutes)
-          `)
-          .eq('id', postId)
-          .single()
+    // Poll for new posts every 30 seconds instead of realtime
+    const pollInterval = setInterval(() => {
+      fetchPosts()
+    }, 30000)
 
-        if (error) throw error
-        return data
-      } catch (error) {
-        console.error('Error fetching single post:', error)
-        return null
-      }
-    }
-
-    // Subscribe to posts changes
-    const postsChannel = supabase
-      .channel('public:posts')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'posts'
-        },
-        async (payload) => {
-          console.log('📝 Posts change received:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            // New post added - fetch full post data and add to top
-            const newPost = await fetchSinglePostLocal(payload.new.id)
-            if (newPost) {
-              setPosts(current => [newPost, ...current])
-              // Initialize empty likes and comments for new post
-              setLikes(current => ({ ...current, [newPost.id]: [] }))
-              setComments(current => ({ ...current, [newPost.id]: [] }))
-              console.log('✅ New post added to feed')
-            }
-          } else if (payload.eventType === 'DELETE') {
-            // Post deleted - remove from posts
-            setPosts(current => current.filter(post => post.id !== payload.old.id))
-            // Clean up likes and comments
-            setLikes(current => {
-              const updated = { ...current }
-              delete updated[payload.old.id]
-              return updated
-            })
-            setComments(current => {
-              const updated = { ...current }
-              delete updated[payload.old.id]
-              return updated
-            })
-            console.log('🗑️ Post removed from feed')
-          } else if (payload.eventType === 'UPDATE') {
-            // Post updated - refetch the updated post
-            const updatedPost = await fetchSinglePostLocal(payload.new.id)
-            if (updatedPost) {
-              setPosts(current => 
-                current.map(post => 
-                  post.id === updatedPost.id ? updatedPost : post
-                )
-              )
-              console.log('📝 Post updated in feed')
-            }
-          }
-        }
-      )
-      .subscribe()
-
-    // Subscribe to likes changes
-    const likesChannel = supabase
-      .channel('public:likes')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'likes'
-        },
-        (payload) => {
-          console.log('❤️ Likes change received:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            // New like added
-            const newLike = payload.new as Like
-            setLikes(current => ({
-              ...current,
-              [newLike.post_id]: [...(current[newLike.post_id] || []), newLike]
-            }))
-            console.log('👍 Like added')
-          } else if (payload.eventType === 'DELETE') {
-            // Like removed
-            const deletedLike = payload.old as Like
-            setLikes(current => ({
-              ...current,
-              [deletedLike.post_id]: (current[deletedLike.post_id] || []).filter(
-                like => like.id !== deletedLike.id
-              )
-            }))
-            console.log('👎 Like removed')
-          }
-        }
-      )
-      .subscribe()
-
-    // Subscribe to comments changes
-    const commentsChannel = supabase
-      .channel('public:comments')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'comments'
-        },
-        async (payload) => {
-          console.log('💬 Comments change received:', payload)
-          
-          if (payload.eventType === 'INSERT') {
-            // New comment added - fetch with profile data
-            try {
-              const { data, error } = await supabase
-                .from('comments')
-                .select(`
-                  *,
-                  profiles:user_id (name, avatar_url, email)
-                `)
-                .eq('id', payload.new.id)
-                .single()
-
-              if (!error && data) {
-                const comment = data as Comment
-                setComments(current => ({
-                  ...current,
-                  [comment.post_id]: [...(current[comment.post_id] || []), comment]
-                }))
-                console.log('💬 Comment added')
-              }
-            } catch (error) {
-              console.error('Error fetching new comment:', error)
-            }
-          } else if (payload.eventType === 'DELETE') {
-            // Comment removed
-            const deletedComment = payload.old as Comment
-            setComments(current => ({
-              ...current,
-              [deletedComment.post_id]: (current[deletedComment.post_id] || []).filter(
-                comment => comment.id !== deletedComment.id
-              )
-            }))
-            console.log('🗑️ Comment removed')
-          } else if (payload.eventType === 'UPDATE') {
-            // Comment updated
-            const updatedComment = payload.new as Comment
-            setComments(current => ({
-              ...current,
-              [updatedComment.post_id]: (current[updatedComment.post_id] || []).map(
-                comment => comment.id === updatedComment.id ? updatedComment : comment
-              )
-            }))
-            console.log('📝 Comment updated')
-          }
-        }
-      )
-      .subscribe()
-
-    // Cleanup subscriptions
+    // Cleanup polling
     return () => {
-      console.log('🔌 Cleaning up realtime subscriptions...')
-      postsChannel.unsubscribe()
-      likesChannel.unsubscribe()
-      commentsChannel.unsubscribe()
+      clearInterval(pollInterval)
     }
   }, [fetchPosts])
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        toast.error('Image must be less than 5MB')
+      // Check file size - 128MB for videos, 32MB for images
+      const maxSize = file.type.startsWith('video/') ? 128 * 1024 * 1024 : 32 * 1024 * 1024
+      if (file.size > maxSize) {
+        toast.error(file.type.startsWith('video/') ? 'Video must be less than 128MB' : 'Image must be less than 32MB')
         return
       }
-      setSelectedImage(file)
+      
+      const isVideo = file.type.startsWith('video/')
+      const isImage = file.type.startsWith('image/')
+      
+      if (!isVideo && !isImage) {
+        toast.error('Please select an image or video file')
+        return
+      }
+      
+      setSelectedFile(file)
+      setFileType(isVideo ? 'video' : 'image')
+      
       const reader = new FileReader()
-      reader.onload = (e) => setImagePreview(e.target?.result as string)
+      reader.onload = (e) => setFilePreview(e.target?.result as string)
       reader.readAsDataURL(file)
     }
   }
 
-  const uploadImage = async (file: File): Promise<string | null> => {
+  const uploadFileToR2 = async (file: File): Promise<string | null> => {
     try {
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${user!.id}-${Date.now()}.${fileExt}`
-      const filePath = `posts/${fileName}`
-
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file)
-
-      if (uploadError) throw uploadError
-
-      const { data } = supabase.storage
-        .from('images')
-        .getPublicUrl(filePath)
-
-      return data.publicUrl
+      setIsUploading(true)
+      console.log("📸 Starting R2 upload for:", file.name);
+      
+      const result = await uploadMedia(file, (progress) => {
+        console.log(`📊 Upload progress: ${progress.percentage}%`);
+      });
+      
+      console.log("📸 R2 upload successful:", result.url);
+      return result.url;
     } catch (error) {
-      toast.error('Error uploading image: ' + String(error))
-      return null
+      console.error('📸 R2 upload error:', error);
+      toast.error('Error uploading file: ' + String(error));
+      return null;
+    } finally {
+      setIsUploading(false)
     }
   }
 
   const createPost = async () => {
-    if (!user || (!newPost.trim() && !selectedImage)) return
+    if (!user || (!newPost.trim() && !selectedFile)) return
 
     const postContent = newPost.trim() || ''
-    const selectedImageFile = selectedImage
-    const imagePreviewUrl = imagePreview
+    const selectedFileData = selectedFile
+    const filePreviewUrl = filePreview
     
     // Optimistic update: immediately add post to UI
     const optimisticPost = {
       id: `temp-${Date.now()}`,
-      user_id: user.id,
+      userId: user.id,
       content: postContent,
-      image_url: imagePreviewUrl, // Use preview URL temporarily
-      workout_id: null,
-      created_at: new Date().toISOString(),
-      profiles: {
+      imageUrl: filePreview, // Use preview URL temporarily
+      isVideo: fileType === 'video', // Track if this is a video for optimistic rendering
+      workoutId: null,
+      createdAt: new Date().toISOString(),
+      user: {
         name: profile?.name || null,
-        avatar_url: profile?.avatar_url || null,
+        avatarUrl: profile?.avatarUrl || null,
         email: profile?.email || ''
       },
-      workouts: null
+      workout: null
     }
 
     // Add to posts immediately
@@ -379,16 +266,16 @@ export function FeedScreen() {
 
     // Clear form and close modal immediately
     setNewPost('')
-    setSelectedImage(null)
-    setImagePreview(null)
+    setSelectedFile(null)
+    setFilePreview(null)
+    setFileType(null)
     setShowNewPost(false)
 
     try {
-      setUploading(true)
       let imageUrl = null
 
-      if (selectedImageFile) {
-        imageUrl = await uploadImage(selectedImageFile)
+      if (selectedFileData) {
+        imageUrl = await uploadFileToR2(selectedFileData)
         if (!imageUrl) {
           throw new Error('Failed to upload image')
         }
@@ -397,21 +284,18 @@ export function FeedScreen() {
         setPosts(current => 
           current.map(post => 
             post.id === optimisticPost.id 
-              ? { ...post, image_url: imageUrl }
+              ? { ...post, imageUrl: imageUrl, isVideo: undefined } // Remove temporary flag
               : post
           )
         )
       }
 
-      const { error } = await supabase
-        .from('posts')
-        .insert({
-          user_id: user.id,
-          content: postContent,
-          image_url: imageUrl
-        })
+      const { error } = await api.createPost({
+        content: postContent,
+        imageUrl: imageUrl
+      })
 
-      if (error) throw error
+      if (error) throw new Error(error)
 
       toast.success('Post shared!')
       // Note: Realtime will replace our optimistic post with the real one
@@ -431,13 +315,11 @@ export function FeedScreen() {
       
       // Restore form state
       setNewPost(postContent)
-      setSelectedImage(selectedImageFile)
-      setImagePreview(imagePreviewUrl)
+      setSelectedFile(selectedFileData)
+      setFilePreview(filePreviewUrl)
       setShowNewPost(true)
       
       toast.error('Error creating post: ' + String(error))
-    } finally {
-      setUploading(false)
     }
   }
 
@@ -469,46 +351,16 @@ export function FeedScreen() {
     }
 
     try {
-      // Check the actual database state to avoid 409 conflicts
-      const { data: existingLikes, error: fetchError } = await supabase
-        .from('likes')
-        .select('id')
-        .eq('post_id', postId)
-        .eq('user_id', user.id)
-
-      if (fetchError) {
-        console.error('Error fetching existing likes:', fetchError)
-        throw fetchError
+      // Use API to toggle like
+      const { error } = await api.toggleLike(postId)
+      
+      if (error) {
+        console.error('Error toggling like:', error)
+        throw new Error(error)
       }
-
-      const hasExistingLike = existingLikes && existingLikes.length > 0
-
-      if (hasExistingLike) {
-        // Unlike - delete the existing like
-        const { error } = await supabase
-          .from('likes')
-          .delete()
-          .eq('post_id', postId)
-          .eq('user_id', user.id)
-
-        if (error) {
-          console.error('Error removing like:', error)
-          throw error
-        }
-        console.log('👎 Like removed successfully')
-      } else {
-        // Like - insert new like
-        const { error } = await supabase
-          .from('likes')
-          .insert({ post_id: postId, user_id: user.id })
-
-        if (error) {
-          console.error('Error adding like:', error)
-          throw error
-        }
-        console.log('👍 Like added successfully')
-      }
-    } catch (error: any) {
+      
+      console.log(hasLike ? '👎 Like removed successfully' : '👍 Like added successfully')
+    } catch (error: unknown) {
       console.error('toggleLike error:', error)
       
       // Revert optimistic update on error
@@ -532,7 +384,7 @@ export function FeedScreen() {
         }))
       }
       
-      toast.error('Error updating like: ' + (error.message || error.toString() || 'Unknown error'))
+      toast.error('Error updating like: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -548,9 +400,9 @@ export function FeedScreen() {
       user_id: user.id,
       content: commentContent,
       created_at: new Date().toISOString(),
-      profiles: {
+      user: {
         name: profile?.name || null,
-        avatar_url: profile?.avatar_url || null,
+        avatarUrl: profile?.avatarUrl || null,
         email: profile?.email || ''
       }
     }
@@ -564,17 +416,13 @@ export function FeedScreen() {
     setNewComment(prev => ({ ...prev, [postId]: '' }))
 
     try {
-      const { error } = await supabase
-        .from('comments')
-        .insert({
-          post_id: postId,
-          user_id: user.id,
-          content: commentContent
-        })
+      const { error } = await api.addComment(postId, {
+        content: commentContent
+      })
 
-      if (error) throw error
+      if (error) throw new Error(error)
 
-      // Note: Realtime will replace our optimistic comment with the real one
+      console.log('💬 Comment added successfully')
     } catch (error) {
       // Revert optimistic update on error
       setComments(current => ({
@@ -600,18 +448,23 @@ export function FeedScreen() {
   }
 
   const getUserInitials = (name: string | null, email: string) => {
-    if (name) return name[0].toUpperCase()
-    return email[0].toUpperCase()
+    if (name && name.length > 0) return name[0].toUpperCase()
+    if (email && email.length > 0) return email[0].toUpperCase()
+    return ''
   }
 
   const getUserAvatar = (userProfile: unknown, email: string) => {
-    const profileData = userProfile as { avatar_url?: string; name?: string } | null
-    if (profileData?.avatar_url) {
+    const profileData = userProfile as { avatarUrl?: string; name?: string } | null
+    if (profileData?.avatarUrl) {
       return (
         <img
-          src={profileData.avatar_url}
-          alt="Profile"
+          src={profileData.avatarUrl}
+          alt="User Avatar"
           className="w-10 h-10 rounded-full object-cover"
+          style={{ 
+            imageRendering: 'high-quality',
+            colorInterpolation: 'sRGB'
+          }}
         />
       )
     }
@@ -649,16 +502,14 @@ export function FeedScreen() {
   }
 
   return (
-    <div className="pb-20 lg:pb-0">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 p-4 lg:p-6 sticky top-0 z-40">
+    <div className="h-full flex flex-col" style={{ backgroundColor: '#fff' }}>
+      {/* Fixed Header */}
+      <div className="bg-white border-b border-gray-200 p-4 lg:p-6 flex-shrink-0 z-40" style={{ backgroundColor: '#fff' }}>
         <div className="flex items-center justify-between">
           <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Team Feed</h1>
           <div className="flex items-center gap-2">
-            <motion.button
-              whileTap={{ scale: 0.95 }}
+            <button
               onClick={() => {
-                console.log('🔄 Manual refresh triggered')
                 fetchPosts()
               }}
               className="bg-gray-100 text-gray-600 p-3 rounded-full hover:bg-gray-200 transition-all"
@@ -667,60 +518,74 @@ export function FeedScreen() {
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-            </motion.button>
-            <motion.button
-              whileTap={{ scale: 0.95 }}
+            </button>
+            <button
               onClick={() => setShowNewPost(true)}
               className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
             >
               <Plus className="w-5 h-5" />
-            </motion.button>
+            </button>
           </div>
         </div>
       </div>
 
+      {/* Scrollable Content Area */}
+      <div className="flex-1 overflow-y-auto">
+
       {/* New post modal */}
-      <AnimatePresence>
-        {showNewPost && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+      {showNewPost && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+            onClick={(e) => {
+              // Close modal when clicking on overlay
+              if (e.target === e.currentTarget) {
+                closeModal()
+              }
+            }}
           >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto"
+            <div
+              className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
+              style={{ backgroundColor: '#fff' }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold text-gray-900">Share with the Team</h3>
                 <button
-                  onClick={() => {
-                    setShowNewPost(false)
-                    setSelectedImage(null)
-                    setImagePreview(null)
-                    setNewPost('')
-                  }}
+                  onClick={closeModal}
                   className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Image preview */}
-              {imagePreview && (
+              {/* File preview */}
+              {filePreview && (
                 <div className="mb-4 relative">
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="w-full h-48 object-cover rounded-lg"
-                  />
+                  {fileType === 'image' ? (
+                    <img
+                      src={filePreview}
+                      alt="Preview"
+                      className="w-full h-48 object-cover rounded-lg"
+                      style={{ 
+                        imageRendering: 'high-quality',
+                        colorInterpolation: 'sRGB'
+                      }}
+                    />
+                  ) : fileType === 'video' ? (
+                    <video
+                      src={filePreview}
+                      className="w-full h-48 object-contain rounded-lg bg-black"
+                      controls
+                      preload="metadata"
+                      playsInline
+                      controlsList="nodownload"
+                    />
+                  ) : null}
                   <button
                     onClick={() => {
-                      setSelectedImage(null)
-                      setImagePreview(null)
+                      setSelectedFile(null)
+                      setFilePreview(null)
+                      setFileType(null)
                     }}
                     className="absolute top-2 right-2 bg-black bg-opacity-50 text-white p-1 rounded-full hover:bg-opacity-70 transition-colors"
                   >
@@ -741,8 +606,8 @@ export function FeedScreen() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*"
-                  onChange={handleImageSelect}
+                  accept="image/*,video/*"
+                  onChange={handleFileSelect}
                   className="hidden"
                 />
                 <button
@@ -750,94 +615,85 @@ export function FeedScreen() {
                   className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
                 >
                   <Camera className="w-4 h-4" />
-                  Photo
+                  Photo/Video
                 </button>
               </div>
 
               <div className="flex gap-3 mt-4">
                 <button
-                  onClick={() => {
-                    setShowNewPost(false)
-                    setSelectedImage(null)
-                    setImagePreview(null)
-                    setNewPost('')
-                  }}
+                  onClick={closeModal}
                   className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={createPost}
-                  disabled={(!newPost.trim() && !selectedImage) || uploading}
+                  disabled={(!newPost.trim() && !selectedFile) || isUploading}
                   className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 rounded-lg font-medium disabled:opacity-50 hover:shadow-lg transition-all"
                 >
-                  {uploading ? 'Sharing...' : 'Share'}
+                  {isUploading ? 'Sharing...' : 'Share'}
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Posts */}
-      <div className="max-w-2xl lg:mx-auto px-4 pt-6">
-        {posts.length === 0 ? (
-          <div className="text-center py-8 px-4">
-            <div className="text-4xl mb-4">🏀</div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No posts yet!</h3>
-            <p className="text-gray-500">Be the first to share your training progress</p>
+            </div>
           </div>
-        ) : (
+        )}
+
+        {/* Posts */}
+        <div className="max-w-2xl lg:mx-auto px-4 pt-6 pb-20 lg:pb-6">
+          {posts.length === 0 ? (
+            <div className="text-center py-8 px-4">
+              <div className="text-4xl mb-4">🏀</div>
+              <h3 className="text-lg font-semibold text-gray-700 mb-2">No posts yet!</h3>
+              <p className="text-gray-500">Be the first to share your training progress</p>
+            </div>
+          ) : (
           posts.map((post, index) => {
-            const postProfiles = post.profiles as { name?: string; avatar_url?: string; email?: string } | null
-            const postWorkouts = post.workouts as { exercise_type?: string; points_earned?: number; duration_minutes?: number } | null
+            const postUser = post.user as { name?: string; avatarUrl?: string; email?: string } | null
+            const postWorkouts = post.workout as { exerciseType?: string; pointsEarned?: number; durationMinutes?: number } | null
             const isOptimistic = post.id.startsWith('temp-')
             
             return (
-              <motion.div
+              <div
                 key={post.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
                 className={`bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border mb-4 overflow-hidden ${
                   isOptimistic ? 'border-orange-200 bg-orange-50/30' : 'border-gray-100'
                 }`}
+                style={{ backgroundColor: isOptimistic ? undefined : '#fff' }}
               >
                 {/* Post header */}
                 <div className="flex items-center gap-3 p-4">
-                  {getUserAvatar(post.profiles, profile?.email || '')}
+                  {getUserAvatar(post.user, (post.user as any)?.email || '')}
                   <div className="flex-1">
                     <p className="font-semibold text-gray-900">
-                      {postProfiles?.name || postProfiles?.email?.split('@')[0] || 'Unknown User'}
+                      {postUser?.name || postUser?.email?.split('@')[0] || 'Unknown User'}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {formatTime(post.created_at)}
+                      {formatTime(post.createdAt)}
                       {isOptimistic && <span className="ml-1 text-orange-500">• Sharing...</span>}
                     </p>
                   </div>
                 </div>
 
                 {/* Workout badge */}
-                {post.workouts && (
+                {post.workout && (
                   <div className="px-4 pb-2">
                     <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm">
                       <Trophy className="w-4 h-4" />
-                      <span className="capitalize">{postWorkouts?.exercise_type}</span>
+                      <span className="capitalize">{postWorkouts?.exerciseType}</span>
                       <span>•</span>
-                      <span>+{postWorkouts?.points_earned} pts</span>
+                      <span>+{postWorkouts?.pointsEarned} pts</span>
                       <Clock className="w-3 h-3 ml-1" />
-                      <span>{postWorkouts?.duration_minutes}m</span>
+                      <span>{postWorkouts?.durationMinutes}m</span>
                     </div>
                   </div>
                 )}
 
-                {/* Post image */}
-                {post.image_url && (
-                  <div className="w-full">
-                    <img
-                      src={post.image_url}
-                      alt="Post content"
-                      className="w-full h-auto max-h-96 object-cover"
+                {/* Post media */}
+                {post.imageUrl && (
+                  <div className="w-full bg-gray-50 overflow-hidden">
+                    <MediaRenderer 
+                      url={post.imageUrl} 
+                      isOptimisticVideo={post.isVideo}
                     />
                   </div>
                 )}
@@ -853,8 +709,7 @@ export function FeedScreen() {
                 <div className="px-4 py-3 border-t border-gray-50">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-4">
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
+                      <button
                         onClick={() => toggleLike(post.id)}
                         className={`flex items-center gap-2 transition-colors ${
                           isLikedByUser(post.id) 
@@ -863,20 +718,18 @@ export function FeedScreen() {
                         }`}
                       >
                         <Heart className={`w-5 h-5 ${isLikedByUser(post.id) ? 'fill-current' : ''}`} />
-                      </motion.button>
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
+                      </button>
+                      <button
                         onClick={() => setShowComments(prev => ({ ...prev, [post.id]: !prev[post.id] }))}
                         className="flex items-center gap-2 text-gray-500 hover:text-blue-500 transition-colors"
                       >
                         <MessageCircle className="w-5 h-5" />
-                      </motion.button>
-                      <motion.button
-                        whileTap={{ scale: 0.95 }}
+                      </button>
+                      <button
                         className="flex items-center gap-2 text-gray-500 hover:text-green-500 transition-colors"
                       >
                         <Share className="w-5 h-5" />
-                      </motion.button>
+                      </button>
                     </div>
                   </div>
 
@@ -892,32 +745,36 @@ export function FeedScreen() {
                     <div className="mb-3">
                       {(() => {
                         const mostRecentComment = comments[post.id][comments[post.id].length - 1]
-                        const commentProfiles = mostRecentComment.profiles as { name?: string; avatar_url?: string; email?: string } | null
+                        const commentUser = mostRecentComment.user as { name?: string; avatarUrl?: string; email?: string } | null
                         const isOptimistic = mostRecentComment.id.startsWith('temp-')
                         
                         return (
                           <div className={`flex gap-3 ${isOptimistic ? 'opacity-75' : ''}`}>
-                            {commentProfiles?.avatar_url ? (
+                            {commentUser?.avatarUrl ? (
                               <img
-                                src={commentProfiles.avatar_url}
-                                alt="Profile"
+                                src={commentUser.avatarUrl}
+                                alt="User Avatar"
                                 className="w-6 h-6 rounded-full object-cover"
+                                style={{ 
+                                  imageRendering: 'high-quality',
+                                  colorInterpolation: 'sRGB'
+                                }}
                               />
                             ) : (
                               <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
-                                {getUserInitials(commentProfiles?.name || null, profile?.email || '')}
+                                {getUserInitials(commentUser?.name || null, commentUser?.email || '')}
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
                               <p className="text-sm">
                                 <span className="font-semibold text-gray-900">
-                                  {commentProfiles?.name || commentProfiles?.email?.split('@')[0] || 'Unknown User'}
+                                  {commentUser?.name || commentUser?.email?.split('@')[0] || 'Unknown User'}
                                 </span>
                                 <span className="text-gray-700 ml-2">{mostRecentComment.content}</span>
                               </p>
                               <div className="flex items-center gap-2 mt-1">
                                 <p className="text-xs text-gray-500">
-                                  {formatTime(mostRecentComment.created_at)}
+                                  {formatTime(mostRecentComment.createdAt)}
                                   {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
                                 </p>
                                 {comments[post.id].length > 1 && (
@@ -937,41 +794,39 @@ export function FeedScreen() {
                   )}
 
                   {/* Comments section */}
-                  <AnimatePresence>
-                    {showComments[post.id] && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="border-t border-gray-100 pt-3 mt-3"
-                      >
+                  {showComments[post.id] && (
+                    <div className="border-t border-gray-100 pt-3 mt-3">
                         {/* Existing comments */}
                         <div className="space-y-3 mb-3">
                           {comments[post.id]?.map((comment) => {
-                            const commentProfiles = comment.profiles as { name?: string; avatar_url?: string; email?: string } | null
+                            const commentUser = comment.user as { name?: string; avatarUrl?: string; email?: string } | null
                             const isOptimistic = comment.id.startsWith('temp-')
                             return (
                               <div key={comment.id} className={`flex gap-3 ${isOptimistic ? 'opacity-75' : ''}`}>
-                                {commentProfiles?.avatar_url ? (
+                                {commentUser?.avatarUrl ? (
                                   <img
-                                    src={commentProfiles.avatar_url}
-                                    alt="Profile"
+                                    src={commentUser.avatarUrl}
+                                    alt="User Avatar"
                                     className="w-8 h-8 rounded-full object-cover"
+                                    style={{ 
+                                      imageRendering: 'high-quality',
+                                      colorInterpolation: 'sRGB'
+                                    }}
                                   />
                                 ) : (
                                   <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                                    {getUserInitials(commentProfiles?.name || null, profile?.email || '')}
+                                    {getUserInitials(commentUser?.name || null, commentUser?.email || '')}
                                   </div>
                                 )}
                                 <div className="flex-1">
                                   <div className={`rounded-lg px-3 py-2 ${isOptimistic ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
                                     <p className="font-semibold text-sm text-gray-900">
-                                      {commentProfiles?.name || commentProfiles?.email?.split('@')[0] || 'Unknown User'}
+                                      {commentUser?.name || commentUser?.email?.split('@')[0] || 'Unknown User'}
                                     </p>
                                     <p className="text-gray-800">{comment.content}</p>
                                   </div>
                                   <p className="text-xs text-gray-500 mt-1">
-                                    {formatTime(comment.created_at)}
+                                    {formatTime(comment.createdAt)}
                                     {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
                                   </p>
                                 </div>
@@ -982,15 +837,19 @@ export function FeedScreen() {
 
                         {/* Add comment */}
                         <div className="flex gap-3">
-                          {profile?.avatar_url ? (
+                          {profile?.avatarUrl ? (
                             <img
-                              src={profile.avatar_url}
-                              alt="Profile"
+                              src={profile.avatarUrl}
+                              alt="User Avatar"
                               className="w-8 h-8 rounded-full object-cover"
+                              style={{ 
+                                imageRendering: 'high-quality',
+                                colorInterpolation: 'sRGB'
+                              }}
                             />
                           ) : (
                             <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                              {getUserInitials(profile?.name, profile?.email || '')}
+                              {getUserInitials(profile?.name || null, profile?.email || '')}
                             </div>
                           )}
                           <div className="flex-1 flex gap-2">
@@ -1015,14 +874,14 @@ export function FeedScreen() {
                             </button>
                           </div>
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                    </div>
+                  )}
                 </div>
-              </motion.div>
+              </div>
             )
           })
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

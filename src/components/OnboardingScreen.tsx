@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
-import { Users, User, ArrowRight, Camera, Upload, LogOut } from 'lucide-react'
+import { Users, User as UserIcon, ArrowRight, Camera, Upload, LogOut } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
-import { supabase } from '../lib/supabase'
+import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 
 type OnboardingStep = 'role' | 'profile-setup'
@@ -45,23 +45,15 @@ export function OnboardingScreen() {
   const uploadImage = async (file: File): Promise<string | null> => {
     try {
       setUploading(true)
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${Date.now()}.${fileExt}`
-      const filePath = `avatars/${fileName}`
 
-      const { error: uploadError } = await supabase.storage
-        .from('images')
-        .upload(filePath, file)
+      const { data, error: uploadError } = await api.uploadImage(file)
 
-      if (uploadError) throw uploadError
+      if (uploadError) throw new Error(uploadError)
+      if (!data?.url) throw new Error('Failed to upload image')
 
-      const { data } = supabase.storage
-        .from('images')
-        .getPublicUrl(filePath)
-
-      return data.publicUrl
-    } catch (error: any) {
-      toast.error('Error uploading image: ' + error.message)
+      return data.url
+    } catch (error: unknown) {
+      toast.error('Error uploading image: ' + (error instanceof Error ? error.message : String(error)))
       return null
     } finally {
       setUploading(false)
@@ -90,14 +82,14 @@ export function OnboardingScreen() {
       }
 
       // Prepare profile updates
-      const profileUpdates: any = {
+      const profileUpdates: Record<string, unknown> = {
         role: selectedRole,
         name: name.trim(),
         is_onboarded: true
       }
 
       if (avatarUrl) {
-        profileUpdates.avatar_url = avatarUrl
+        profileUpdates.avatarUrl = avatarUrl
       }
 
       if (selectedRole === 'player' && jerseyNumber.trim()) {
@@ -106,7 +98,7 @@ export function OnboardingScreen() {
           toast.error('Jersey number must be between 0 and 99')
           return
         }
-        profileUpdates.jersey_number = jersey
+        profileUpdates.jerseyNumber = jersey
       }
 
       await updateProfile(profileUpdates)
@@ -154,7 +146,7 @@ export function OnboardingScreen() {
               className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
-                <User className="w-6 h-6" />
+                <UserIcon className="w-6 h-6" />
                 <div className="text-left">
                   <div className="font-semibold">I'm a Player</div>
                   <div className="text-sm opacity-90">Track my training and connect with teammates</div>
@@ -203,7 +195,7 @@ export function OnboardingScreen() {
       >
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4">
-            {selectedRole === 'player' ? <User className="w-8 h-8 text-white" /> : <Users className="w-8 h-8 text-white" />}
+            {selectedRole === 'player' ? <UserIcon className="w-8 h-8 text-white" /> : <Users className="w-8 h-8 text-white" />}
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Set Up Your Profile</h1>
           <p className="text-gray-600">

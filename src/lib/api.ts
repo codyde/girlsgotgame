@@ -1,0 +1,230 @@
+// API client to replace Supabase calls
+const API_BASE_URL = (import.meta.env.VITE_API_URL || 
+  (import.meta.env.PROD ? 'https://api.girlsgotgame.app' : 'http://localhost:3001')
+) + '/api';
+
+interface ApiResponse<T> {
+  data?: T;
+  error?: string;
+}
+
+class ApiClient {
+  private baseUrl: string;
+
+  constructor(baseUrl: string) {
+    this.baseUrl = baseUrl;
+  }
+
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    try {
+      const url = `${this.baseUrl}${endpoint}`;
+      const response = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+        credentials: 'include', // Include cookies for auth
+        ...options,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        
+        // Don't log 401 errors as they're expected when user isn't authenticated
+        if (response.status !== 401) {
+          console.error(`API request failed [${response.status}]:`, errorData.error || `HTTP ${response.status}`);
+        }
+        
+        return { error: errorData.error || `HTTP ${response.status}` };
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      console.error('API request failed:', error);
+      return { error: 'Network error' };
+    }
+  }
+
+  // Auth endpoints
+  async getCurrentSession() {
+    return this.request('/me');
+  }
+
+  async signInWithGoogle() {
+    // This will redirect to Google OAuth using Better Auth format
+    window.location.href = `${this.baseUrl}/auth/sign-in/social/google`;
+  }
+
+  async signOut() {
+    return this.request('/auth/sign-out', { method: 'POST' });
+  }
+
+  // Profile endpoints
+  async getProfile() {
+    return this.request('/profiles/me');
+  }
+
+  async createProfile(profile: any) {
+    return this.request('/profiles', {
+      method: 'POST',
+      body: JSON.stringify(profile),
+    });
+  }
+
+  async updateProfile(updates: any) {
+    return this.request('/profiles/me', {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async getLeaderboard() {
+    return this.request('/profiles/leaderboard');
+  }
+
+  async getPlayerProfiles() {
+    return this.request('/profiles/players');
+  }
+
+  async getProfileById(id: string) {
+    return this.request(`/profiles/${id}`);
+  }
+
+  // Workout endpoints
+  async getWorkouts(limit = 20, offset = 0) {
+    return this.request(`/workouts?limit=${limit}&offset=${offset}`);
+  }
+
+  async getWorkoutsByUserId(userId: string, limit = 20, offset = 0) {
+    return this.request(`/workouts/user/${userId}?limit=${limit}&offset=${offset}`);
+  }
+
+  async createWorkout(workout: any) {
+    return this.request('/workouts', {
+      method: 'POST',
+      body: JSON.stringify(workout),
+    });
+  }
+
+  async getWorkoutById(id: string) {
+    return this.request(`/workouts/${id}`);
+  }
+
+  async deleteWorkout(id: string) {
+    return this.request(`/workouts/${id}`, { method: 'DELETE' });
+  }
+
+  async getWorkoutStats() {
+    return this.request('/workouts/stats/summary');
+  }
+
+  // Post endpoints
+  async getFeed(limit = 20, offset = 0) {
+    return this.request(`/posts/feed?limit=${limit}&offset=${offset}`);
+  }
+
+  async getUserPosts(limit = 20, offset = 0) {
+    return this.request(`/posts/my-posts?limit=${limit}&offset=${offset}`);
+  }
+
+  async createPost(post: any) {
+    return this.request('/posts', {
+      method: 'POST',
+      body: JSON.stringify(post),
+    });
+  }
+
+  async updatePost(id: string, updates: any) {
+    return this.request(`/posts/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deletePost(id: string) {
+    return this.request(`/posts/${id}`, { method: 'DELETE' });
+  }
+
+  async toggleLike(postId: string) {
+    return this.request(`/posts/${postId}/like`, { method: 'POST' });
+  }
+
+  async addComment(postId: string, comment: any) {
+    return this.request(`/posts/${postId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify(comment),
+    });
+  }
+
+  async getComments(postId: string, limit = 20, offset = 0) {
+    return this.request(`/posts/${postId}/comments?limit=${limit}&offset=${offset}`);
+  }
+
+  async deleteComment(commentId: string) {
+    return this.request(`/posts/comments/${commentId}`, { method: 'DELETE' });
+  }
+
+  // File upload endpoints
+  async uploadFile(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.request('/upload/file', {
+      method: 'POST',
+      body: formData,
+      headers: {}, // Remove Content-Type to let browser set it with boundary
+    });
+  }
+
+  async uploadImage(file: File) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return this.request('/upload/file', {
+      method: 'POST',
+      body: formData,
+      headers: {}, // Remove Content-Type to let browser set it with boundary
+    });
+  }
+
+  async getPresignedUrl(fileName: string, contentType: string) {
+    return this.request('/upload/presigned-url', {
+      method: 'POST',
+      body: JSON.stringify({ fileName, contentType }),
+    });
+  }
+
+  async deleteFile(key: string) {
+    return this.request(`/upload/file/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Admin endpoints
+  async getAllWorkouts() {
+    return this.request('/workouts/admin/all');
+  }
+
+  async getAllProfiles() {
+    return this.request('/profiles/admin/all');
+  }
+
+  async getParentChildRelations() {
+    return this.request('/profiles/admin/relations');
+  }
+
+  async updateChildAssignment(parentId: string, childId: string | null) {
+    return this.request(`/profiles/admin/${parentId}/child`, {
+      method: 'PATCH',
+      body: JSON.stringify({ childId }),
+    });
+  }
+}
+
+// Export singleton instance
+export const api = new ApiClient(API_BASE_URL);
+export default api;

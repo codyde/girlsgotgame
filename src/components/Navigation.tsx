@@ -1,6 +1,5 @@
 import React from 'react'
-import { motion } from 'framer-motion'
-import { Home, Trophy, Users, User, LogOut } from 'lucide-react'
+import { Home, Trophy, Users, User as UserIcon, LogOut } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
 
@@ -13,13 +12,13 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
   const { signOut, profile } = useAuth()
 
   const isAdmin = profile?.email === 'codydearkland@gmail.com'
-  const isParentWithChild = profile?.role === 'parent' && profile?.child_id
+  const isParentWithChild = profile?.role === 'parent' && profile?.childId
 
   const tabs = [
     { id: 'feed', label: 'Feed', icon: Home },
     { id: 'training', label: 'Training', icon: Trophy },
     { id: 'leaderboard', label: 'Team', icon: Users },
-    { id: 'profile', label: 'Profile', icon: User },
+    { id: 'profile', label: 'Profile', icon: UserIcon },
   ]
 
   // Add parent dashboard tab for parents with assigned children
@@ -42,9 +41,8 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
             const isActive = currentTab === tab.id
             
             return (
-              <motion.button
+              <button
                 key={tab.id}
-                whileTap={{ scale: 0.95 }}
                 onClick={() => setCurrentTab(tab.id)}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-left ${
                   isActive 
@@ -54,14 +52,13 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
               >
                 <Icon className="w-5 h-5" />
                 <span className="font-medium">{tab.label}</span>
-              </motion.button>
+              </button>
             )
           })}
         </div>
         
         <div className="mt-auto pt-4 border-t border-gray-200">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => {
               console.log('Desktop sign out clicked')
               signOut()
@@ -70,7 +67,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
           >
             <LogOut className="w-5 h-5" />
             <span className="font-medium">Sign Out</span>
-          </motion.button>
+          </button>
         </div>
       </nav>
 
@@ -82,9 +79,8 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
             const isActive = currentTab === tab.id
             
             return (
-              <motion.button
+              <button
                 key={tab.id}
-                whileTap={{ scale: 0.95 }}
                 onClick={() => setCurrentTab(tab.id)}
                 className={`flex flex-col items-center py-2 px-3 rounded-lg transition-colors ${
                   isActive 
@@ -94,12 +90,11 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
               >
                 <Icon className="w-5 h-5 mb-1" />
                 <span className="text-xs font-medium">{tab.label}</span>
-              </motion.button>
+              </button>
             )
           })}
           
-          <motion.button
-            whileTap={{ scale: 0.95 }}
+          <button
             onClick={() => {
               console.log('Mobile sign out clicked')
               signOut()
@@ -108,7 +103,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
           >
             <LogOut className="w-5 h-5 mb-1" />
             <span className="text-xs font-medium">Exit</span>
-          </motion.button>
+          </button>
         </div>
       </div>
     </>
