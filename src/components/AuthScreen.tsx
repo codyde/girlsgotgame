@@ -39,8 +39,8 @@ export function AuthScreen() {
           className="relative bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl p-8 lg:p-10 w-full max-w-md lg:max-w-lg border border-white/20"
         >
           <div className="text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 mb-4">
-              <img src={logo} alt="Girls Got Game" className="w-16 h-16 rounded-full shadow-lg" />
+            <div className="inline-flex items-center justify-center w-64 h-64 mb-4">
+              <img src={logo} alt="Girls Got Game" className="h-64 w-64 object-contain" />
             </div>
             <h1 className="text-3xl lg:text-4xl font-heading font-bold text-gray-900 mb-4">
               Signing you in...
@@ -73,11 +73,8 @@ export function AuthScreen() {
           className="relative bg-white/60 backdrop-blur-md rounded-2xl shadow-xl p-8 w-full max-w-md border border-white/30"
         >
           <div className="text-center mb-8">
-            <h1 className="text-5xl font-heading font-bold text-gray-900 mb-4">
-              GIRLS GOT GAME
-            </h1>
-            <div className="inline-flex items-center justify-center w-44 h-44 mb-6 bg-white rounded-full p-2">
-              <img src={logo} alt="Girls Got Game" className="w-40 h-40 rounded-full shadow-lg" />
+            <div className="mb-6">
+              <img src={logo} alt="Girls Got Game" className="mx-auto" />
             </div>
           </div>
 
@@ -148,9 +145,9 @@ export function AuthScreen() {
           <div
             className="relative bg-white/60 backdrop-blur-md rounded-2xl shadow-xl p-6 w-full max-w-lg border border-white/30"
           >
-            <div className="text-center mb-4">
-              <div className="inline-flex items-center justify-center w-40 h-40 mb-4 bg-white rounded-full p-2">
-                <img src={logo} alt="Girls Got Game" className="w-36 h-36 rounded-full shadow-lg" />
+            <div className="text-center mb-4 flex justify-center">
+              <div className="w-44 h-44 bg-white rounded-full flex items-center justify-center p-2">
+                <img src={logo} alt="Girls Got Game" className="h-40 w-40 object-cover border-4 border-white rounded-full" />
               </div>
             </div>
 

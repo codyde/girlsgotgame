@@ -33,8 +33,8 @@ function AppContent() {
       <>
         <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 mb-4 mx-auto">
-              <img src={logo} alt="Girls Got Game" className="w-16 h-16 rounded-full shadow-lg" />
+            <div className="w-64 h-64 mb-4 mx-auto">
+              <img src={logo} alt="Girls Got Game" className="h-64 w-64 object-contain" />
             </div>
             <div className="text-lg font-semibold text-text-secondary font-body">Loading...</div>
           </div>
@@ -82,10 +82,10 @@ function AppContent() {
       <div className="hidden lg:flex min-h-screen">
         {/* Desktop Sidebar */}
         <div className="w-64 bg-bg-primary shadow-lg border-r border-border-primary flex flex-col">
-          <div className="p-6 border-b border-border-primary">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10">
-                <img src={logo} alt="Girls Got Game" className="w-10 h-10 rounded-full shadow-sm" />
+          <div className="px-2 py-4 border-b border-border-primary">
+            <div className="flex items-center gap-2">
+              <div className="w-16 h-16">
+                <img src={logo} alt="Girls Got Game" className="w-16 h-16 object-contain" />
               </div>
               <div>
                 <h1 className="text-2xl font-bold font-heading text-text-primary">Girls Got Game</h1>

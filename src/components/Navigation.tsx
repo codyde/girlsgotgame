@@ -86,8 +86,8 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
               <Menu className="w-6 h-6" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8">
-                <img src={logo} alt="Girls Got Game" className="w-8 h-8 rounded-full shadow-sm" />
+              <div className="w-10 h-10">
+                <img src={logo} alt="Girls Got Game" className="w-10 h-10 object-cover" />
               </div>
               <div>
                 <h1 className="text-xl font-heading font-bold text-text-primary">Girls Got Game</h1>
@@ -112,8 +112,8 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                 {/* Header */}
                 <div className="flex items-center justify-between p-4 border-b border-border-primary">
                   <div className="flex items-center gap-3">
-                    <div className="w-8 h-8">
-                      <img src={logo} alt="Girls Got Game" className="w-8 h-8 rounded-full shadow-sm" />
+                    <div className="w-10 h-10 flex items-center justify-center">
+                      <img src={logo} alt="Girls Got Game" className="w-full h-auto object-contain" />
                     </div>
                     <div>
                       <h2 className="text-lg font-heading font-bold text-text-primary">Menu</h2>
