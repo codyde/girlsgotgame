@@ -108,16 +108,17 @@ export async function createUploadThingRouteHandler(uploadRouter: any) {
   console.log('🌍 All UPLOADTHING env vars:', Object.keys(process.env).filter(k => k.includes('UPLOADTHING')));
   console.log('🌍 UPLOADTHING_CALLBACK_URL env var:', process.env.UPLOADTHING_CALLBACK_URL || 'not set');
   
-  // Try THREE different approaches to fix the callback URL issue
+  // FORCE callback URL for production since auto-detection is failing
   let config: any = { token: token };
   
+  // Always set explicit callback URL based on environment
   if (process.env.NODE_ENV === 'production') {
-    // Approach 1: Let UploadThing auto-detect (remove manual callbackUrl)
-    console.log('🔗 Attempt 1: Using auto-detection');
+    // Use environment variable if set, otherwise use hardcoded production URL
+    config.callbackUrl = process.env.UPLOADTHING_CALLBACK_URL || 'https://api.girlsgotgame.app/api/uploadthing';
+    console.log('🔗 Production: Using callback URL:', config.callbackUrl);
   } else {
-    // Local development - set explicit URL
     config.callbackUrl = 'http://localhost:3001/api/uploadthing';
-    console.log('🔗 Local: Using explicit callback URL');
+    console.log('🔗 Local: Using callback URL:', config.callbackUrl);
   }
   
   console.log('🔗 UploadThing config:', JSON.stringify(config, null, 2));
@@ -130,42 +131,59 @@ export async function createUploadThingRouteHandler(uploadRouter: any) {
   
   // Wrap handler to catch and log errors with ULTRA debugging
   return async (req: any, res: any) => {
-    try {
-      console.log('📤 UploadThing request START:', req.method, req.url);
-      console.log('📤 Full URL:', req.protocol + '://' + req.get('host') + req.originalUrl);
-      console.log('📤 Request headers:');
-      Object.entries(req.headers).forEach(([key, value]) => {
-        console.log(`   ${key}: ${value}`);
-      });
-      console.log('📤 Query params:', req.query);
-      console.log('📤 Body type:', typeof req.body);
-      
-      // Try to intercept UploadThing's internal validation
-      const originalEnd = res.end;
-      res.end = function(chunk: any, encoding?: any) {
-        console.log('📤 Response status:', res.statusCode);
-        console.log('📤 Response headers:', res.getHeaders());
-        if (chunk && res.statusCode !== 200) {
-          console.log('📤 Error response body:', chunk.toString());
+    const startTime = Date.now();
+    console.log('\n🚀 ===== UPLOADTHING REQUEST START =====');
+    console.log('📤 Method:', req.method);
+    console.log('📤 URL:', req.url);
+    console.log('📤 Query:', JSON.stringify(req.query));
+    
+    // Log critical headers
+    console.log('📤 Critical headers:');
+    console.log('   Host:', req.headers.host);
+    console.log('   X-Forwarded-Host:', req.headers['x-forwarded-host']);
+    console.log('   X-Forwarded-Proto:', req.headers['x-forwarded-proto']);
+    console.log('   Origin:', req.headers.origin);
+    console.log('   X-UploadThing-Version:', req.headers['x-uploadthing-version']);
+    
+    // Intercept response to capture error details
+    const originalJson = res.json;
+    const originalEnd = res.end;
+    const originalSend = res.send;
+    
+    res.json = function(body: any) {
+      console.log('📤 Response JSON:', JSON.stringify(body));
+      return originalJson.call(this, body);
+    };
+    
+    res.send = function(body: any) {
+      console.log('📤 Response Send:', body);
+      return originalSend.call(this, body);
+    };
+    
+    res.end = function(chunk: any, encoding?: any) {
+      const duration = Date.now() - startTime;
+      console.log('📤 Response Status:', res.statusCode);
+      console.log('📤 Response Duration:', duration + 'ms');
+      if (chunk) {
+        const body = chunk.toString();
+        console.log('📤 Response Body:', body);
+        if (res.statusCode === 400 && body.includes('Invalid signing secret')) {
+          console.log('🔴 INVALID SIGNING SECRET DETECTED!');
+          console.log('🔴 This means UploadThing cannot validate the request signature');
+          console.log('🔴 Possible causes:');
+          console.log('   1. Wrong token in environment');
+          console.log('   2. Callback URL mismatch');
+          console.log('   3. Request tampering/proxy issues');
         }
-        return originalEnd.call(this, chunk, encoding);
-      };
-      
-      const result = await handler(req, res);
-      console.log('✅ UploadThing request completed successfully');
-      return result;
-    } catch (error) {
-      console.error('❌ UploadThing handler error:', error);
-      console.error('❌ Error type:', error?.constructor?.name);
-      console.error('❌ Error message:', (error as Error).message);
-      console.error('❌ Error stack:', (error as Error).stack?.split('\n').slice(0, 10));
-      
-      // Log the full error object
-      if (error && typeof error === 'object') {
-        console.error('❌ Full error object keys:', Object.keys(error));
-        console.error('❌ Error stringified:', JSON.stringify(error, null, 2));
       }
-      
+      console.log('🏁 ===== UPLOADTHING REQUEST END =====\n');
+      return originalEnd.call(this, chunk, encoding);
+    };
+    
+    try {
+      return await handler(req, res);
+    } catch (error) {
+      console.error('❌ UploadThing handler crashed:', error);
       throw error;
     }
   };

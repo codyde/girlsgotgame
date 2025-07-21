@@ -136,8 +136,29 @@ app.use(express.json());
 // UploadThing route handler - using dynamic imports to avoid CommonJS issues
 async function setupUploadThing() {
   try {
+    console.log("🔧 Setting up UploadThing...");
     const uploadRouter = await initializeUploadThing();
     const routeHandler = await createUploadThingRouteHandler(uploadRouter);
+    
+    // Add a debug endpoint to check configuration
+    app.get("/api/uploadthing/debug", (req, res) => {
+      const token = process.env.UPLOADTHING_TOKEN;
+      let decoded = null;
+      try {
+        decoded = JSON.parse(Buffer.from(token || '', 'base64').toString());
+      } catch (e) {}
+      
+      res.json({
+        tokenPresent: !!token,
+        tokenLength: token?.length || 0,
+        decodedAppId: decoded?.appId || 'decode-failed',
+        callbackUrl: process.env.UPLOADTHING_CALLBACK_URL || 'not-set',
+        nodeEnv: process.env.NODE_ENV,
+        port: process.env.PORT,
+        timestamp: new Date().toISOString()
+      });
+    });
+    
     app.use("/api/uploadthing", routeHandler);
     console.log("✅ UploadThing routes configured successfully");
     return true;
