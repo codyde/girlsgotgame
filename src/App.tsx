@@ -7,6 +7,7 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
 import { TrainingScreen } from './components/TrainingScreen'
+import { TeamChatScreen } from './components/TeamChatScreen'
 import { LeaderboardScreen } from './components/LeaderboardScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AdminScreen } from './components/AdminScreen'
@@ -58,6 +59,8 @@ function AppContent() {
         return <FeedScreen />
       case 'training':
         return <TrainingScreen />
+      case 'chat':
+        return <TeamChatScreen />
       case 'leaderboard':
         return <LeaderboardScreen />
       case 'profile':
@@ -100,10 +103,10 @@ function AppContent() {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden">
-        <main className="max-w-lg mx-auto bg-white min-h-screen shadow-xl pb-20">
+      <div className="lg:hidden min-h-screen bg-gray-50">
+        <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
+        <main className="pt-16">
           {renderCurrentScreen()}
-          <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
         </main>
       </div>
       <Toaster position="top-center" />

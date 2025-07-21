@@ -95,6 +95,35 @@ export const comments = pgTable('comments', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Teams table for group chat channels
+export const teams = pgTable('teams', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: varchar('name', { length: 255 }).notNull(),
+  description: text('description'),
+  createdBy: varchar('created_by', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
+// Team membership table
+export const teamMembers = pgTable('team_members', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  teamId: uuid('team_id').notNull(),
+  userId: varchar('user_id', { length: 255 }).notNull(),
+  role: varchar('role', { length: 20 }).default('member').notNull(), // 'admin' | 'member'
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),
+});
+
+// Chat messages table (supports both team and DM)
+export const chatMessages = pgTable('chat_messages', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  senderId: varchar('sender_id', { length: 255 }).notNull(),
+  teamId: uuid('team_id'), // NULL for DMs
+  recipientId: varchar('recipient_id', { length: 255 }), // NULL for team messages
+  content: text('content').notNull(),
+  messageType: varchar('message_type', { length: 20 }).default('text').notNull(), // 'text' | 'image' | 'system'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+});
+
 // Relations
 export const userRelations = relations(user, ({ many, one }) => ({
   workouts: many(workouts),
@@ -103,6 +132,10 @@ export const userRelations = relations(user, ({ many, one }) => ({
   comments: many(comments),
   sessions: many(session),
   accounts: many(account),
+  teamMemberships: many(teamMembers),
+  createdTeams: many(teams),
+  sentMessages: many(chatMessages, { relationName: 'sender' }),
+  receivedMessages: many(chatMessages, { relationName: 'recipient' }),
   child: one(user, {
     fields: [user.childId],
     references: [user.id],
@@ -163,5 +196,42 @@ export const commentsRelations = relations(comments, ({ one }) => ({
   user: one(user, {
     fields: [comments.userId],
     references: [user.id],
+  }),
+}));
+
+export const teamsRelations = relations(teams, ({ one, many }) => ({
+  creator: one(user, {
+    fields: [teams.createdBy],
+    references: [user.id],
+  }),
+  members: many(teamMembers),
+  messages: many(chatMessages),
+}));
+
+export const teamMembersRelations = relations(teamMembers, ({ one }) => ({
+  team: one(teams, {
+    fields: [teamMembers.teamId],
+    references: [teams.id],
+  }),
+  user: one(user, {
+    fields: [teamMembers.userId],
+    references: [user.id],
+  }),
+}));
+
+export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
+  sender: one(user, {
+    fields: [chatMessages.senderId],
+    references: [user.id],
+    relationName: 'sender',
+  }),
+  recipient: one(user, {
+    fields: [chatMessages.recipientId],
+    references: [user.id],
+    relationName: 'recipient',
+  }),
+  team: one(teams, {
+    fields: [chatMessages.teamId],
+    references: [teams.id],
   }),
 }));

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2 } from 'lucide-react'
+import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
-import { User, Workout } from '../types'
+import { User, Workout, TeamWithMemberCount, TeamMember } from '../types'
 import toast from 'react-hot-toast'
 
 interface WorkoutWithUser extends Workout {
@@ -14,10 +14,16 @@ export function AdminScreen() {
   const [workouts, setWorkouts] = useState<WorkoutWithUser[]>([])
   const [profiles, setProfiles] = useState<User[]>([])
   const [parentChildRelations, setParentChildRelations] = useState<{parent: User, child: User | null}[]>([])
+  const [teams, setTeams] = useState<TeamWithMemberCount[]>([])
+  const [selectedTeamMembers, setSelectedTeamMembers] = useState<TeamMember[]>([])
+  const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [showRelations, setShowRelations] = useState(false)
+  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams'>('workouts')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
+  const [showCreateTeam, setShowCreateTeam] = useState(false)
+  const [newTeamName, setNewTeamName] = useState('')
+  const [newTeamDescription, setNewTeamDescription] = useState('')
 
   // Check if user is admin
   const isAdmin = profile?.email === 'codydearkland@gmail.com'
@@ -42,9 +48,14 @@ export function AdminScreen() {
       const { data: relationData, error: relationError } = await api.getParentChildRelations()
       if (relationError) throw new Error(relationError)
 
+      // Fetch teams
+      const { data: teamData, error: teamError } = await api.getAllTeamsAdmin()
+      if (teamError) throw new Error(teamError)
+
       setWorkouts(workoutData || [])
       setProfiles(profileData || [])
       setParentChildRelations(relationData || [])
+      setTeams(teamData || [])
     } catch (error: unknown) {
       toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
@@ -75,6 +86,86 @@ export function AdminScreen() {
       setEditingRelation(null)
     } catch (error: unknown) {
       toast.error('Error updating assignment: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const createTeam = async () => {
+    if (!newTeamName.trim()) {
+      toast.error('Team name is required')
+      return
+    }
+
+    try {
+      const { error } = await api.createTeam(newTeamName.trim(), newTeamDescription.trim() || undefined)
+      if (error) throw new Error(error)
+      
+      toast.success('Team created successfully')
+      setShowCreateTeam(false)
+      setNewTeamName('')
+      setNewTeamDescription('')
+      fetchData() // Refresh teams
+    } catch (error: unknown) {
+      toast.error('Error creating team: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const deleteTeam = async (teamId: string, teamName: string) => {
+    if (!confirm(`Are you sure you want to delete the team "${teamName}"? This will remove all members and delete all chat messages.`)) {
+      return
+    }
+
+    try {
+      const { error } = await api.deleteTeam(teamId)
+      if (error) throw new Error(error)
+      
+      toast.success('Team deleted successfully')
+      setSelectedTeam(null)
+      setSelectedTeamMembers([])
+      fetchData() // Refresh teams
+    } catch (error: unknown) {
+      toast.error('Error deleting team: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const loadTeamMembers = async (teamId: string) => {
+    try {
+      const { data, error } = await api.getTeamMembers(teamId)
+      if (error) throw new Error(error)
+      
+      setSelectedTeamMembers(data || [])
+      setSelectedTeam(teamId)
+    } catch (error: unknown) {
+      toast.error('Error loading team members: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const addTeamMember = async (teamId: string, userId: string) => {
+    try {
+      const { error } = await api.addTeamMember(teamId, userId)
+      if (error) throw new Error(error)
+      
+      toast.success('Player added to team')
+      loadTeamMembers(teamId) // Refresh team members
+      fetchData() // Refresh team counts
+    } catch (error: unknown) {
+      toast.error('Error adding team member: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const removeTeamMember = async (teamId: string, memberId: string, userName: string) => {
+    if (!confirm(`Remove ${userName} from this team?`)) {
+      return
+    }
+
+    try {
+      const { error } = await api.removeTeamMember(teamId, memberId)
+      if (error) throw new Error(error)
+      
+      toast.success('Player removed from team')
+      loadTeamMembers(teamId) // Refresh team members
+      fetchData() // Refresh team counts
+    } catch (error: unknown) {
+      toast.error('Error removing team member: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -168,9 +259,9 @@ export function AdminScreen() {
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
         <div className="flex border-b border-gray-200">
           <button
-            onClick={() => setShowRelations(false)}
+            onClick={() => setCurrentTab('workouts')}
             className={`px-6 py-3 font-medium transition-colors ${
-              !showRelations 
+              currentTab === 'workouts'
                 ? 'text-orange-600 border-b-2 border-orange-600' 
                 : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -178,9 +269,19 @@ export function AdminScreen() {
             Workouts
           </button>
           <button
-            onClick={() => setShowRelations(true)}
+            onClick={() => setCurrentTab('teams')}
             className={`px-6 py-3 font-medium transition-colors ${
-              showRelations 
+              currentTab === 'teams'
+                ? 'text-orange-600 border-b-2 border-orange-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Teams
+          </button>
+          <button
+            onClick={() => setCurrentTab('relations')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              currentTab === 'relations'
                 ? 'text-orange-600 border-b-2 border-orange-600' 
                 : 'text-gray-500 hover:text-gray-700'
             }`}
@@ -190,7 +291,196 @@ export function AdminScreen() {
         </div>
       </div>
 
-      {showRelations ? (
+      {currentTab === 'teams' ? (
+        /* Team Management */
+        <div className="space-y-6">
+          {/* Create Team Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">Team Management</h3>
+                  <p className="text-sm text-gray-600">Create and manage chat teams for players</p>
+                </div>
+                <button
+                  onClick={() => setShowCreateTeam(!showCreateTeam)}
+                  className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Team
+                </button>
+              </div>
+            </div>
+
+            {showCreateTeam && (
+              <div className="p-4 border-b border-gray-200 bg-gray-50">
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Team Name</label>
+                    <input
+                      type="text"
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      placeholder="Enter team name"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Description (Optional)</label>
+                    <textarea
+                      value={newTeamDescription}
+                      onChange={(e) => setNewTeamDescription(e.target.value)}
+                      placeholder="Enter team description"
+                      rows={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                    />
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={createTeam}
+                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors"
+                    >
+                      Create Team
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCreateTeam(false)
+                        setNewTeamName('')
+                        setNewTeamDescription('')
+                      }}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Teams List */}
+            <div className="p-4">
+              {teams.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="text-gray-500">No teams created yet</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {teams.map((team) => (
+                    <div
+                      key={team.id}
+                      className={`border border-gray-200 rounded-lg p-4 hover:shadow-md transition-all cursor-pointer ${
+                        selectedTeam === team.id ? 'ring-2 ring-orange-500 border-orange-500' : ''
+                      }`}
+                      onClick={() => loadTeamMembers(team.id)}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <h4 className="font-semibold text-gray-900">{team.name}</h4>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            deleteTeam(team.id, team.name)
+                          }}
+                          className="text-red-500 hover:text-red-700 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {team.description && (
+                        <p className="text-sm text-gray-600 mb-2">{team.description}</p>
+                      )}
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <Users className="w-4 h-4" />
+                        <span>{team.memberCount} members</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Team Members Section */}
+          {selectedTeam && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Team Members - {teams.find(t => t.id === selectedTeam)?.name}
+                </h3>
+                <p className="text-sm text-gray-600">Add or remove players from this team</p>
+              </div>
+
+              <div className="p-4">
+                {/* Add Member Section */}
+                <div className="mb-6">
+                  <h4 className="text-md font-medium text-gray-900 mb-3">Add Player</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {profiles
+                      .filter(profile => !selectedTeamMembers.some(member => member.userId === profile.id))
+                      .map((profile) => (
+                        <button
+                          key={profile.id}
+                          onClick={() => addTeamMember(selectedTeam, profile.id)}
+                          className="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors text-left"
+                        >
+                          <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                            <span className="text-sm font-medium text-orange-600">
+                              {profile.name?.[0]?.toUpperCase() || '?'}
+                            </span>
+                          </div>
+                          <div>
+                            <div className="font-medium text-gray-900">{profile.name}</div>
+                            <div className="text-sm text-gray-500">{profile.email}</div>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Current Members */}
+                <div>
+                  <h4 className="text-md font-medium text-gray-900 mb-3">Current Members</h4>
+                  {selectedTeamMembers.length === 0 ? (
+                    <p className="text-gray-500">No members in this team</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {selectedTeamMembers.map((member) => (
+                        <div
+                          key={member.id}
+                          className="flex items-center justify-between p-3 border border-gray-200 rounded-lg"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
+                              <span className="text-sm font-medium text-orange-600">
+                                {member.userName?.[0]?.toUpperCase() || '?'}
+                              </span>
+                            </div>
+                            <div>
+                              <div className="font-medium text-gray-900">{member.userName}</div>
+                              <div className="text-sm text-gray-500">{member.userEmail}</div>
+                            </div>
+                            {member.role === 'admin' && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Admin
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => removeTeamMember(selectedTeam, member.id, member.userName)}
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : currentTab === 'relations' ? (
         /* Parent-Child Relations */
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-4 border-b border-gray-200">

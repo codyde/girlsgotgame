@@ -45,3 +45,45 @@ export interface ExerciseTemplate {
   basePoints: number
   icon: string
 }
+
+export interface Team {
+  id: string
+  name: string
+  description: string | null
+  createdBy: string
+  createdAt: string
+  role?: 'admin' | 'member'
+}
+
+export interface ChatMessage {
+  id: string
+  senderId: string
+  senderName: string
+  senderAvatar: string | null
+  teamId?: string | null
+  recipientId?: string | null
+  content: string
+  messageType: 'text' | 'image' | 'system'
+  createdAt: string
+}
+
+export interface DMUser {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+}
+
+export interface TeamMember {
+  id: string
+  userId: string
+  role: 'admin' | 'member'
+  joinedAt: string
+  userName: string
+  userEmail: string
+  userAvatar: string | null
+}
+
+export interface TeamWithMemberCount extends Team {
+  memberCount: number
+}

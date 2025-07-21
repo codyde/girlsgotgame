@@ -15,7 +15,7 @@ class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  private async request<T>(
+  async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
@@ -221,6 +221,41 @@ class ApiClient {
     return this.request(`/profiles/admin/${parentId}/child`, {
       method: 'PATCH',
       body: JSON.stringify({ childId }),
+    });
+  }
+
+  // Team management endpoints (admin only)
+  async getAllTeamsAdmin() {
+    return this.request('/chat/admin/teams');
+  }
+
+  async getTeamMembers(teamId: string) {
+    return this.request(`/chat/admin/teams/${teamId}/members`);
+  }
+
+  async addTeamMember(teamId: string, userId: string, role: string = 'member') {
+    return this.request(`/chat/admin/teams/${teamId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, role }),
+    });
+  }
+
+  async removeTeamMember(teamId: string, memberId: string) {
+    return this.request(`/chat/admin/teams/${teamId}/members/${memberId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async deleteTeam(teamId: string) {
+    return this.request(`/chat/admin/teams/${teamId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async createTeam(name: string, description?: string) {
+    return this.request('/chat/teams', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
     });
   }
 }

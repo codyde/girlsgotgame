@@ -11,7 +11,7 @@ interface WorkoutWithUser extends Workout {
 }
 
 export function ParentDashboard() {
-  const { profile, updateProfile } = useAuth()
+  const { user, profile, updateProfile } = useAuth()
   const [players, setPlayers] = useState<User[]>([])
   const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [loading, setLoading] = useState(true)
@@ -19,11 +19,11 @@ export function ParentDashboard() {
 
   useEffect(() => {
     fetchPlayers()
-    if (profile?.childId) {
-      setSelectedChild(profile.childId)
-      fetchChildWorkouts(profile.childId)
+    if (user?.childId) {
+      setSelectedChild(user.childId)
+      fetchChildWorkouts(user.childId)
     }
-  }, [profile])
+  }, [user])
 
   const fetchPlayers = async () => {
     try {

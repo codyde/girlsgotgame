@@ -4,6 +4,8 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
+import { createServer } from 'http';
+import { Server, Socket } from 'socket.io';
 
 // Route imports
 import authRoutes from './routes/auth';
@@ -11,6 +13,7 @@ import profileRoutes from './routes/profiles';
 import workoutRoutes from './routes/workouts';
 import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
+import chatRoutes from './routes/chat';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 // UploadThing removed - using Cloudflare R2 instead
@@ -19,6 +22,15 @@ import { toNodeHandler } from 'better-auth/node';
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
+const server = createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: process.env.NODE_ENV === 'production'
+      ? 'https://girlsgotgame.app'
+      : ['http://localhost:5173', 'http://localhost:5174'],
+    credentials: true
+  }
+});
 const PORT = process.env.PORT || 3001;
 
 // Middleware (but NOT express.json() yet - it interferes with Better Auth)
@@ -133,6 +145,111 @@ app.all('/api/auth/*', async (req, res, next) => {
 // NOW add express.json() middleware for other routes
 app.use(express.json());
 
+// Socket.IO authentication middleware
+io.use(async (socket: Socket, next: (err?: Error) => void) => {
+  try {
+    // Get session from cookies
+    const sessionData = await auth.api.getSession({
+      headers: socket.handshake.headers,
+    });
+
+    if (!sessionData?.user) {
+      return next(new Error('Authentication required'));
+    }
+
+    // Attach user data to socket
+    socket.data.user = sessionData.user;
+    next();
+  } catch (error) {
+    console.error('Socket auth error:', error);
+    next(new Error('Authentication failed'));
+  }
+});
+
+// Socket.IO connection handling
+io.on('connection', (socket: Socket) => {
+  const user = socket.data.user;
+  console.log(`User ${user.name} (${user.id}) connected to chat`);
+
+  // Join user to their personal room for DMs
+  socket.join(`user_${user.id}`);
+  
+  // Join user to their team rooms
+  // TODO: Load user's team memberships and join those rooms
+  
+  // Handle joining a team room
+  socket.on('join_team', (teamId: string) => {
+    // TODO: Verify user is member of this team
+    socket.join(`team_${teamId}`);
+    console.log(`User ${user.name} joined team ${teamId}`);
+  });
+
+  // Handle leaving a team room
+  socket.on('leave_team', (teamId: string) => {
+    socket.leave(`team_${teamId}`);
+    console.log(`User ${user.name} left team ${teamId}`);
+  });
+
+  // Handle team message
+  socket.on('team_message', (data: { teamId: string; content: string }) => {
+    // TODO: Save message to database and broadcast to team room
+    const message = {
+      id: crypto.randomUUID(),
+      senderId: user.id,
+      senderName: user.name,
+      teamId: data.teamId,
+      content: data.content,
+      messageType: 'text',
+      createdAt: new Date().toISOString(),
+    };
+    
+    // Broadcast to team room
+    io.to(`team_${data.teamId}`).emit('team_message', message);
+    console.log(`Team message from ${user.name} to team ${data.teamId}: ${data.content}`);
+  });
+
+  // Handle direct message
+  socket.on('direct_message', (data: { recipientId: string; content: string }) => {
+    // TODO: Save message to database
+    const message = {
+      id: crypto.randomUUID(),
+      senderId: user.id,
+      senderName: user.name,
+      recipientId: data.recipientId,
+      content: data.content,
+      messageType: 'text',
+      createdAt: new Date().toISOString(),
+    };
+    
+    // Send to recipient and sender
+    io.to(`user_${data.recipientId}`).emit('direct_message', message);
+    io.to(`user_${user.id}`).emit('direct_message', message);
+    console.log(`DM from ${user.name} to ${data.recipientId}: ${data.content}`);
+  });
+
+  // Handle typing indicators
+  socket.on('typing_start', (data: { teamId?: string; recipientId?: string }) => {
+    if (data.teamId) {
+      socket.to(`team_${data.teamId}`).emit('user_typing', { userId: user.id, userName: user.name, teamId: data.teamId });
+    } else if (data.recipientId) {
+      socket.to(`user_${data.recipientId}`).emit('user_typing', { userId: user.id, userName: user.name, recipientId: data.recipientId });
+    }
+  });
+
+  socket.on('typing_stop', (data: { teamId?: string; recipientId?: string }) => {
+    if (data.teamId) {
+      socket.to(`team_${data.teamId}`).emit('user_stop_typing', { userId: user.id, teamId: data.teamId });
+    } else if (data.recipientId) {
+      socket.to(`user_${data.recipientId}`).emit('user_stop_typing', { userId: user.id, recipientId: data.recipientId });
+    }
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log(`User ${user.name} (${user.id}) disconnected from chat`);
+  });
+});
+
 // Initialize server
 const initializeServer = async () => {
 
@@ -142,6 +259,7 @@ const initializeServer = async () => {
   app.use('/api/workouts', workoutRoutes);
   app.use('/api/posts', postRoutes);
   app.use('/api/upload', uploadRoutes);
+  app.use('/api/chat', chatRoutes);
 
   // Error handling middleware
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -154,9 +272,10 @@ const initializeServer = async () => {
     res.status(404).json({ error: 'Route not found' });
   });
 
-  app.listen(PORT, () => {
+  server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`Socket.IO enabled for real-time chat`);
   });
 };
 
