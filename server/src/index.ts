@@ -13,7 +13,7 @@ import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
-import { initializeUploadThing, createUploadThingRouteHandler } from './uploadthing';
+// UploadThing removed - using Cloudflare R2 instead
 
 // Load environment variables from the server directory
 dotenv.config({ path: path.join(__dirname, '../.env') });
@@ -133,48 +133,8 @@ app.all('/api/auth/*', async (req, res, next) => {
 // NOW add express.json() middleware for other routes
 app.use(express.json());
 
-// UploadThing route handler - using dynamic imports to avoid CommonJS issues
-async function setupUploadThing() {
-  try {
-    console.log("🔧 Setting up UploadThing...");
-    const uploadRouter = await initializeUploadThing();
-    const routeHandler = await createUploadThingRouteHandler(uploadRouter);
-    
-    // Add a debug endpoint to check configuration
-    app.get("/api/uploadthing/debug", (req, res) => {
-      const token = process.env.UPLOADTHING_TOKEN;
-      let decoded = null;
-      try {
-        decoded = JSON.parse(Buffer.from(token || '', 'base64').toString());
-      } catch (e) {}
-      
-      res.json({
-        tokenPresent: !!token,
-        tokenLength: token?.length || 0,
-        decodedAppId: decoded?.appId || 'decode-failed',
-        callbackUrl: process.env.UPLOADTHING_CALLBACK_URL || 'not-set',
-        nodeEnv: process.env.NODE_ENV,
-        port: process.env.PORT,
-        timestamp: new Date().toISOString()
-      });
-    });
-    
-    app.use("/api/uploadthing", routeHandler);
-    console.log("✅ UploadThing routes configured successfully");
-    return true;
-  } catch (error) {
-    console.error("❌ Failed to setup UploadThing routes:", error);
-    return false;
-  }
-}
-
-// Initialize UploadThing and wait for completion before starting server
+// Initialize server
 const initializeServer = async () => {
-  // Set up UploadThing after express.json() middleware
-  const uploadThingReady = await setupUploadThing();
-  if (!uploadThingReady) {
-    console.error("⚠️ UploadThing failed to initialize, but continuing...");
-  }
 
   // Other API Routes
   app.use('/api', authRoutes);
