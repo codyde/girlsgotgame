@@ -1,0 +1,41 @@
+{
+  "version": "5",
+  "dialect": "pg",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1753042178566,
+      "tag": "0000_sharp_charles_xavier",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1753045439804,
+      "tag": "0001_plain_richard_fisk",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1753046621991,
+      "tag": "0002_nice_brood",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1753046924018,
+      "tag": "0003_bored_william_stryker",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1753061634207,
+      "tag": "0004_tiresome_luckman",
+      "breakpoints": true
+    }
+  ]
+}
