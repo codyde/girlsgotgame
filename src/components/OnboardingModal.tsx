@@ -178,7 +178,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
           className="bg-white rounded-3xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-hidden"
         >
           {/* Header */}
-          <div className="relative bg-gradient-to-r from-orange-500 to-purple-600 p-6 text-white">
+          <div className="relative bg-gradient-to-r from-primary-500 to-purple-600 p-6 text-white">
             {step !== 'complete' && (
               <button
                 onClick={onClose}
@@ -205,7 +205,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                 key={`title-${step}`}
                 initial={{ y: 10, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                className="text-2xl font-bold mb-2"
+                className="text-2xl font-bold font-heading mb-2"
               >
                 {getStepTitle()}
               </motion.h2>
@@ -215,7 +215,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                 initial={{ y: 10, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
                 transition={{ delay: 0.1 }}
-                className="text-white opacity-90"
+                className="text-white font-body opacity-90"
               >
                 {getStepDescription()}
               </motion.p>
@@ -248,14 +248,14 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                   className="text-center py-8"
                 >
                   <div className="text-6xl mb-6">🏀</div>
-                  <p className="text-gray-600 mb-8 text-lg">
+                  <p className="font-body text-gray-600 mb-8 text-lg">
                     Track your training, connect with teammates, and level up your basketball skills!
                   </p>
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => setStep('role')}
-                    className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2"
+                    className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white py-4 rounded-xl font-semibold font-body shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-center gap-2"
                   >
                     Get Started
                     <ArrowRight className="w-5 h-5" />
@@ -275,13 +275,13 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handleRoleSelection('player')}
-                    className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+                    className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white p-4 rounded-xl font-semibold font-body shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
                       <UserIcon className="w-6 h-6" />
                       <div className="text-left">
-                        <div className="font-semibold">I'm a Player</div>
-                        <div className="text-sm opacity-90">Track my training and connect with teammates</div>
+                        <div className="font-semibold font-body">I'm a Player</div>
+                        <div className="text-sm font-body opacity-90">Track my training and connect with teammates</div>
                       </div>
                     </div>
                     <ArrowRight className="w-5 h-5" />
@@ -291,13 +291,13 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={() => handleRoleSelection('parent')}
-                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+                    className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl font-semibold font-body shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
                       <Users className="w-6 h-6" />
                       <div className="text-left">
-                        <div className="font-semibold">I'm a Parent</div>
-                        <div className="text-sm opacity-90">Support and track my child's progress</div>
+                        <div className="font-semibold font-body">I'm a Parent</div>
+                        <div className="text-sm font-body opacity-90">Support and track my child's progress</div>
                       </div>
                     </div>
                     <ArrowRight className="w-5 h-5" />
@@ -306,7 +306,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                   <div className="pt-4">
                     <button
                       onClick={handleBack}
-                      className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                      className="w-full bg-gray-100 text-gray-700 py-3 rounded-xl font-medium font-body hover:bg-gray-200 transition-colors"
                     >
                       Back
                     </button>
@@ -346,11 +346,11 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                           </div>
                         )}
                       </motion.div>
-                      <div className="absolute bottom-0 right-0 bg-orange-500 rounded-full p-1">
+                      <div className="absolute bottom-0 right-0 bg-primary-500 rounded-full p-1">
                         <Upload className="w-3 h-3 text-white" />
                       </div>
                     </div>
-                    <p className="text-sm text-gray-500 mt-2">Tap to add a photo (optional)</p>
+                    <p className="text-sm font-body text-gray-500 mt-2">Tap to add a photo (optional)</p>
                     <input
                       ref={fileInputRef}
                       type="file"
@@ -362,7 +362,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
 
                   {/* Name Input */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <label className="block text-sm font-medium font-body text-gray-700 mb-2">
                       {selectedRole === 'player' ? 'Your Name' : 'Your Name'} *
                     </label>
                     <input
@@ -370,14 +370,14 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder={selectedRole === 'player' ? 'Enter your full name' : 'Enter your name'}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
                     />
                   </div>
 
                   {/* Jersey Number (Players Only) */}
                   {selectedRole === 'player' && (
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-2">
                         Jersey Number *
                       </label>
                       <input
@@ -387,7 +387,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                         placeholder="Enter your jersey number (0-99)"
                         min="0"
                         max="99"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
                       />
                     </div>
                   )}
@@ -395,14 +395,14 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                   <div className="flex gap-3 pt-4">
                     <button
                       onClick={handleBack}
-                      className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-medium hover:bg-gray-200 transition-colors"
+                      className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-medium font-body hover:bg-gray-200 transition-colors"
                     >
                       Back
                     </button>
                     <button
                       onClick={handleComplete}
                       disabled={loading || isUploading || !name.trim() || (selectedRole === 'player' && !jerseyNumber.trim())}
-                      className="flex-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 px-6 rounded-xl font-medium disabled:opacity-50 hover:shadow-lg transition-all flex items-center justify-center gap-2"
+                      className="flex-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-3 px-6 rounded-xl font-medium font-body disabled:opacity-50 hover:shadow-lg transition-all flex items-center justify-center gap-2"
                     >
                       {loading ? (
                         <>
@@ -440,7 +440,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.4 }}
-                    className="text-2xl font-bold text-gray-900 mb-2"
+                    className="text-2xl font-bold font-heading text-gray-900 mb-2"
                   >
                     All Set!
                   </motion.h3>
@@ -449,7 +449,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
                     initial={{ y: 20, opacity: 0 }}
                     animate={{ y: 0, opacity: 1 }}
                     transition={{ delay: 0.6 }}
-                    className="text-gray-600"
+                    className="font-body text-gray-600"
                   >
                     Welcome to Girls Got Game, {name}!
                   </motion.p>

@@ -126,7 +126,7 @@ router.get('/teams/:teamId/messages', requireAuth, async (req: AuthenticatedRequ
       return res.status(403).json({ error: 'Not a member of this team' });
     }
 
-    // Get messages with sender info
+    // Get messages with sender info (limit to last 50 for performance)
     const messages = await db
       .select({
         id: chatMessages.id,
@@ -141,7 +141,7 @@ router.get('/teams/:teamId/messages', requireAuth, async (req: AuthenticatedRequ
       .innerJoin(user, eq(chatMessages.senderId, user.id))
       .where(eq(chatMessages.teamId, teamId))
       .orderBy(asc(chatMessages.createdAt))
-      .limit(100);
+      .limit(50);
 
     res.json(messages);
   } catch (error) {
@@ -156,7 +156,7 @@ router.get('/messages/dm/:otherUserId', requireAuth, async (req: AuthenticatedRe
     const userId = req.user!.id;
     const otherUserId = req.params.otherUserId;
 
-    // Get DM messages between these two users
+    // Get DM messages between these two users (unlimited history)
     const messages = await db
       .select({
         id: chatMessages.id,
@@ -179,8 +179,7 @@ router.get('/messages/dm/:otherUserId', requireAuth, async (req: AuthenticatedRe
           )
         )
       )
-      .orderBy(asc(chatMessages.createdAt))
-      .limit(100);
+      .orderBy(asc(chatMessages.createdAt));
 
     res.json(messages);
   } catch (error) {

@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { SessionProvider } from './contexts/SessionContext'
+import { ThemeProvider } from './contexts/ThemeContext'
+import logo from './assets/logo.png'
 import { useAuth } from './hooks/useAuth'
 import { AuthScreen } from './components/AuthScreen'
 import { OnboardingModal } from './components/OnboardingModal'
@@ -29,12 +31,12 @@ function AppContent() {
   if (loading) {
     return (
       <>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
           <div className="text-center">
-            <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-2xl mb-4 mx-auto">
-              🏀
+            <div className="w-16 h-16 mb-4 mx-auto">
+              <img src={logo} alt="Girls Got Game" className="w-16 h-16 rounded-full shadow-lg" />
             </div>
-            <div className="text-lg font-semibold text-gray-700">Loading...</div>
+            <div className="text-lg font-semibold text-text-secondary font-body">Loading...</div>
           </div>
         </div>
         <Toaster position="top-center" />
@@ -75,19 +77,19 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-bg-secondary">
       {/* Desktop Layout */}
       <div className="hidden lg:flex min-h-screen">
         {/* Desktop Sidebar */}
-        <div className="w-64 bg-white shadow-lg border-r border-gray-200 flex flex-col">
-          <div className="p-6 border-b border-gray-200">
+        <div className="w-64 bg-bg-primary shadow-lg border-r border-border-primary flex flex-col">
+          <div className="p-6 border-b border-border-primary">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
-                🏀
+              <div className="w-10 h-10">
+                <img src={logo} alt="Girls Got Game" className="w-10 h-10 rounded-full shadow-sm" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900">Girls Got Game</h1>
-                <p className="text-sm text-gray-600">Basketball Training</p>
+                <h1 className="text-2xl font-bold font-heading text-text-primary">Girls Got Game</h1>
+                <p className="text-sm font-body text-text-secondary">Basketball Community</p>
               </div>
             </div>
           </div>
@@ -103,7 +105,7 @@ function AppContent() {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden min-h-screen bg-gray-50">
+      <div className="lg:hidden min-h-screen bg-bg-secondary">
         <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
         <main className="pt-16">
           {renderCurrentScreen()}
@@ -122,9 +124,11 @@ function AppContent() {
 
 function App() {
   return (
-    <SessionProvider>
-      <AppContent />
-    </SessionProvider>
+    <ThemeProvider>
+      <SessionProvider>
+        <AppContent />
+      </SessionProvider>
+    </ThemeProvider>
   )
 }
 

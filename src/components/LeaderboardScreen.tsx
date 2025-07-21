@@ -38,7 +38,7 @@ export function LeaderboardScreen() {
     switch (index) {
       case 0: return 'from-yellow-400 to-yellow-600'
       case 1: return 'from-gray-300 to-gray-500'
-      case 2: return 'from-orange-400 to-orange-600'
+      case 2: return 'from-primary-400 to-primary-600'
       default: return 'from-gray-100 to-gray-200'
     }
   }
@@ -63,34 +63,40 @@ export function LeaderboardScreen() {
   }
 
   return (
-    <div className="pb-20 lg:pb-0">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 lg:p-8">
-        <div className="flex items-center gap-3 mb-4">
-          <Trophy className="w-8 h-8" />
-          <h1 className="text-2xl lg:text-3xl font-bold">Team Leaderboard</h1>
+    <div className="h-full flex flex-col">
+      {/* Fixed Header */}
+      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
+        <div className="max-w-4xl lg:mx-auto">
+          <div className="flex items-center gap-3 mb-2">
+            <Trophy className="w-8 h-8 text-primary-600" />
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Team Leaderboard</h1>
+          </div>
+          <p className="text-text-secondary font-body">See who's crushing their training goals!</p>
         </div>
-        <p className="text-orange-100">See who's crushing their training goals!</p>
       </div>
 
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto">
+
       {/* Stats overview */}
-      <div className="p-4 lg:p-6 bg-white border-b border-gray-200">
+      <div className="p-4 lg:p-6 bg-bg-primary border border-border-primary rounded-xl mb-6">
         <div className="grid grid-cols-3 gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">{profiles.length}</div>
-            <div className="text-sm text-gray-600">Active Players</div>
+            <div className="text-2xl font-bold font-body text-primary-600">{profiles.length}</div>
+            <div className="text-sm font-body text-text-secondary">Active Players</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-green-600">
+            <div className="text-2xl font-bold font-body text-secondary-600">
               {profiles.reduce((sum, p) => sum + (p.totalPoints || 0), 0)}
             </div>
-            <div className="text-sm text-gray-600">Total Points</div>
+            <div className="text-sm font-body text-text-secondary">Total Points</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">
+            <div className="text-2xl font-bold font-body text-primary-600">
               {Math.round(profiles.reduce((sum, p) => sum + (p.totalPoints || 0), 0) / Math.max(profiles.length, 1))}
             </div>
-            <div className="text-sm text-gray-600">Avg Points</div>
+            <div className="text-sm font-body text-text-secondary">Avg Points</div>
           </div>
         </div>
       </div>
@@ -100,8 +106,8 @@ export function LeaderboardScreen() {
         {profiles.length === 0 ? (
           <div className="text-center py-8">
             <div className="text-4xl mb-4">🏆</div>
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">No rankings yet!</h3>
-            <p className="text-gray-500">Start training to appear on the leaderboard</p>
+            <h3 className="text-lg font-semibold font-heading text-text-primary mb-2">No rankings yet!</h3>
+            <p className="font-body text-text-secondary">Start training to appear on the leaderboard</p>
           </div>
         ) : (
           profiles.map((profile, index) => (
@@ -115,7 +121,7 @@ export function LeaderboardScreen() {
               <div className="relative bg-white p-4">
                 <div className="flex items-center gap-4">
                   {/* Rank */}
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 font-bold text-gray-700">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 font-bold font-body text-gray-700">
                     {getRankIcon(index) || `#${index + 1}`}
                   </div>
 
@@ -134,17 +140,17 @@ export function LeaderboardScreen() {
 
                   {/* Info */}
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">
+                    <h3 className="font-semibold font-heading text-gray-900">
                       {profile.name || profile.email.split('@')[0]}
                     </h3>
-                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <div className="flex items-center gap-2 text-sm font-body text-gray-600">
                       <Award className="w-4 h-4 text-orange-500" />
-                      <span>{profile.totalPoints || 0} points</span>
+                      <span className="font-body">{profile.totalPoints || 0} points</span>
                     </div>
                   </div>
 
                   {/* Points badge */}
-                  <div className={`px-3 py-1 rounded-full text-white font-semibold bg-gradient-to-r ${getRankColor(index)}`}>
+                  <div className={`px-3 py-1 rounded-full text-white font-semibold font-body bg-gradient-to-r ${getRankColor(index)}`}>
                     {profile.totalPoints || 0}
                   </div>
                 </div>
@@ -171,12 +177,14 @@ export function LeaderboardScreen() {
       {/* Motivation footer */}
       <div className="p-4 mx-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-xl border border-green-200">
         <div className="flex items-center gap-3">
-          <TrendingUp className="w-5 h-5 text-green-600" />
+          <TrendingUp className="w-5 h-5 text-secondary-600" />
           <div>
-            <p className="font-semibold text-green-800">Keep Training!</p>
-            <p className="text-sm text-green-600">Every workout counts towards your team ranking</p>
+            <p className="font-semibold font-heading text-secondary-700">Keep Training!</p>
+            <p className="text-sm font-body text-secondary-600">Every workout counts towards your team ranking</p>
           </div>
         </div>
+        </div>
+      </div>
       </div>
     </div>
   )

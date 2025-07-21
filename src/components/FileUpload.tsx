@@ -100,12 +100,12 @@ export function FileUpload({
 
         {uploading ? (
           <div className="text-center py-8">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
             <p className="text-gray-600">Uploading...</p>
             {progress > 0 && (
               <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
                 <div 
-                  className="bg-orange-500 h-2 rounded-full transition-all duration-300"
+                  className="bg-primary-500 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress}%` }}
                 ></div>
               </div>
@@ -115,12 +115,12 @@ export function FileUpload({
           <div
             onDrop={handleDrop}
             onDragOver={handleDragOver}
-            className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-orange-500 transition-colors cursor-pointer"
+            className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-primary-500 transition-colors cursor-pointer"
             onClick={() => fileInputRef.current?.click()}
           >
             <div className="flex justify-center mb-4">
-              <div className="p-3 bg-orange-100 rounded-full">
-                <Upload className="w-6 h-6 text-orange-600" />
+              <div className="p-3 bg-primary-100 rounded-full">
+                <Upload className="w-6 h-6 text-primary-600" />
               </div>
             </div>
             
@@ -160,7 +160,7 @@ export function FileUpload({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex-1 py-2 px-4 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600 transition-colors disabled:opacity-50"
+            className="flex-1 py-2 px-4 bg-primary-500 text-white rounded-xl font-medium hover:bg-primary-600 transition-colors disabled:opacity-50"
           >
             Choose File
           </button>

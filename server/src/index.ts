@@ -1,3 +1,5 @@
+import './config/instrument';
+import * as Sentry from "@sentry/node";
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -16,12 +18,17 @@ import uploadRoutes from './routes/upload';
 import chatRoutes from './routes/chat';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
+import { db } from './db/index';
+import { chatMessages, user, teamMembers } from './db/schema';
+import { eq, and } from 'drizzle-orm';
 // UploadThing removed - using Cloudflare R2 instead
 
 // Load environment variables from the server directory
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 const app = express();
+Sentry.setupExpressErrorHandler(app);
+
 const server = createServer(app);
 const io = new Server(server, {
   cors: {
@@ -191,40 +198,96 @@ io.on('connection', (socket: Socket) => {
   });
 
   // Handle team message
-  socket.on('team_message', (data: { teamId: string; content: string }) => {
-    // TODO: Save message to database and broadcast to team room
-    const message = {
-      id: crypto.randomUUID(),
-      senderId: user.id,
-      senderName: user.name,
-      teamId: data.teamId,
-      content: data.content,
-      messageType: 'text',
-      createdAt: new Date().toISOString(),
-    };
-    
-    // Broadcast to team room
-    io.to(`team_${data.teamId}`).emit('team_message', message);
-    console.log(`Team message from ${user.name} to team ${data.teamId}: ${data.content}`);
+  socket.on('team_message', async (data: { teamId: string; content: string }) => {
+    try {
+      // Verify user is a member of this team
+      const membership = await db
+        .select()
+        .from(teamMembers)
+        .where(and(eq(teamMembers.teamId, data.teamId), eq(teamMembers.userId, user.id)))
+        .limit(1);
+
+      if (membership.length === 0) {
+        socket.emit('error', { message: 'Not a member of this team' });
+        return;
+      }
+
+      // Save message to database
+      const [newMessage] = await db
+        .insert(chatMessages)
+        .values({
+          senderId: user.id,
+          teamId: data.teamId,
+          recipientId: null,
+          content: data.content,
+          messageType: 'text',
+        })
+        .returning();
+
+      const messageWithSender = {
+        id: newMessage.id,
+        senderId: user.id,
+        senderName: user.name,
+        teamId: data.teamId,
+        content: data.content,
+        messageType: 'text',
+        createdAt: newMessage.createdAt.toISOString(),
+      };
+      
+      // Broadcast to team room
+      io.to(`team_${data.teamId}`).emit('team_message', messageWithSender);
+      console.log(`Team message from ${user.name} to team ${data.teamId}: ${data.content}`);
+    } catch (error) {
+      console.error('Error saving team message:', error);
+      socket.emit('error', { message: 'Failed to send message' });
+    }
   });
 
   // Handle direct message
-  socket.on('direct_message', (data: { recipientId: string; content: string }) => {
-    // TODO: Save message to database
-    const message = {
-      id: crypto.randomUUID(),
-      senderId: user.id,
-      senderName: user.name,
-      recipientId: data.recipientId,
-      content: data.content,
-      messageType: 'text',
-      createdAt: new Date().toISOString(),
-    };
-    
-    // Send to recipient and sender
-    io.to(`user_${data.recipientId}`).emit('direct_message', message);
-    io.to(`user_${user.id}`).emit('direct_message', message);
-    console.log(`DM from ${user.name} to ${data.recipientId}: ${data.content}`);
+  socket.on('direct_message', async (data: { recipientId: string; content: string }) => {
+    try {
+      // Verify recipient exists
+      const recipient = await db
+        .select()
+        .from(user)
+        .where(eq(user.id, data.recipientId))
+        .limit(1);
+
+      if (recipient.length === 0) {
+        socket.emit('error', { message: 'Recipient not found' });
+        return;
+      }
+
+      // Save message to database
+      const [newMessage] = await db
+        .insert(chatMessages)
+        .values({
+          senderId: user.id,
+          teamId: null,
+          recipientId: data.recipientId,
+          content: data.content,
+          messageType: 'text',
+        })
+        .returning();
+
+      const messageWithSender = {
+        id: newMessage.id,
+        senderId: user.id,
+        senderName: user.name,
+        recipientId: data.recipientId,
+        content: data.content,
+        messageType: 'text',
+        createdAt: newMessage.createdAt.toISOString(),
+      };
+      
+      // Send to recipient and sender
+      io.to(`user_${data.recipientId}`).emit('direct_message', messageWithSender);
+      io.to(`user_${user.id}`).emit('direct_message', messageWithSender);
+      console.log(`DM from ${user.name} to ${data.recipientId}: ${data.content}`);
+    } catch (error) {
+      console.error('Error saving direct message:', error);
+      socket.emit('error', { message: 'Failed to send message' });
+    }
   });
 
   // Handle typing indicators

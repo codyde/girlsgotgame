@@ -124,18 +124,18 @@ export function OnboardingScreen() {
 
   if (step === 'role') {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-orange-500 to-purple-600 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center p-4">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
         >
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full mb-4">
               <span className="text-2xl">🏀</span>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Girls Got Game!</h1>
-            <p className="text-gray-600">Let's get you set up. Are you a player or a parent?</p>
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-gray-900 mb-2">Welcome to Girls Got Game!</h1>
+            <p className="font-body text-gray-600">Let's get you set up. Are you a player or a parent?</p>
           </div>
 
           <div className="space-y-4">
@@ -143,13 +143,13 @@ export function OnboardingScreen() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleRoleSelection('player')}
-              className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+              className="w-full bg-gradient-to-r from-primary-500 to-primary-600 text-white p-4 rounded-xl font-semibold font-body shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
                 <UserIcon className="w-6 h-6" />
                 <div className="text-left">
-                  <div className="font-semibold">I'm a Player</div>
-                  <div className="text-sm opacity-90">Track my training and connect with teammates</div>
+                  <div className="font-semibold font-body">I'm a Player</div>
+                  <div className="text-sm font-body opacity-90">Track my training and connect with teammates</div>
                 </div>
               </div>
               <ArrowRight className="w-5 h-5" />
@@ -159,13 +159,13 @@ export function OnboardingScreen() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => handleRoleSelection('parent')}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
+              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4 rounded-xl font-semibold font-body shadow-lg hover:shadow-xl transition-all duration-200 flex items-center justify-between"
             >
               <div className="flex items-center gap-3">
                 <Users className="w-6 h-6" />
                 <div className="text-left">
-                  <div className="font-semibold">I'm a Parent</div>
-                  <div className="text-sm opacity-90">Support and track my child's progress</div>
+                  <div className="font-semibold font-body">I'm a Parent</div>
+                  <div className="text-sm font-body opacity-90">Support and track my child's progress</div>
                 </div>
               </div>
               <ArrowRight className="w-5 h-5" />
@@ -175,7 +175,7 @@ export function OnboardingScreen() {
           <div className="text-center mt-6">
             <button
               onClick={signOut}
-              className="text-gray-500 hover:text-gray-700 text-sm flex items-center gap-2 mx-auto"
+              className="text-gray-500 hover:text-gray-700 text-sm font-body flex items-center gap-2 mx-auto"
             >
               <LogOut className="w-4 h-4" />
               Sign out
@@ -187,18 +187,18 @@ export function OnboardingScreen() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-500 to-purple-600 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-primary-500 to-purple-600 flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0, x: 20 }}
         animate={{ opacity: 1, x: 0 }}
         className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md"
       >
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mb-4">
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full mb-4">
             {selectedRole === 'player' ? <UserIcon className="w-8 h-8 text-white" /> : <Users className="w-8 h-8 text-white" />}
           </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Set Up Your Profile</h1>
-          <p className="text-gray-600">
+          <h1 className="text-3xl lg:text-4xl font-bold font-heading text-gray-900 mb-2">Set Up Your Profile</h1>
+          <p className="font-body text-gray-600">
             {selectedRole === 'player' 
               ? "Tell us about yourself so teammates can find you!" 
               : "Set up your profile to support your child's journey"}
@@ -230,11 +230,11 @@ export function OnboardingScreen() {
                   </div>
                 )}
               </motion.div>
-              <div className="absolute bottom-0 right-0 bg-orange-500 rounded-full p-1">
+              <div className="absolute bottom-0 right-0 bg-primary-500 rounded-full p-1">
                 <Upload className="w-3 h-3 text-white" />
               </div>
             </div>
-            <p className="text-sm text-gray-500 mt-2">Tap to add a photo</p>
+            <p className="text-sm font-body text-gray-500 mt-2">Tap to add a photo</p>
             <input
               ref={fileInputRef}
               type="file"
@@ -246,7 +246,7 @@ export function OnboardingScreen() {
 
           {/* Name Input */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium font-body text-gray-700 mb-2">
               {selectedRole === 'player' ? 'Your Name' : 'Your Name'} *
             </label>
             <input
@@ -254,14 +254,14 @@ export function OnboardingScreen() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={selectedRole === 'player' ? 'Enter your full name' : 'Enter your name'}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
             />
           </div>
 
           {/* Jersey Number (Players Only) */}
           {selectedRole === 'player' && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium font-body text-gray-700 mb-2">
                 Jersey Number *
               </label>
               <input
@@ -271,7 +271,7 @@ export function OnboardingScreen() {
                 placeholder="Enter your jersey number (0-99)"
                 min="0"
                 max="99"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
               />
             </div>
           )}
@@ -279,14 +279,14 @@ export function OnboardingScreen() {
           <div className="flex gap-3">
             <button
               onClick={handleBack}
-              className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium font-body hover:bg-gray-200 transition-colors"
             >
               Back
             </button>
             <button
               onClick={handleComplete}
               disabled={loading || uploading || !name.trim() || (selectedRole === 'player' && !jerseyNumber.trim())}
-              className="flex-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 px-6 rounded-lg font-medium disabled:opacity-50 hover:shadow-lg transition-all flex items-center justify-center gap-2"
+              className="flex-2 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-3 px-6 rounded-lg font-medium font-body disabled:opacity-50 hover:shadow-lg transition-all flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>

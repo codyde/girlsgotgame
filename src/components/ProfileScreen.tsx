@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon } from 'lucide-react'
+import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon, Palette } from 'lucide-react'
 import { useAuth } from '../hooks/useAuth'
+import { useTheme } from '../contexts/ThemeContext'
 import { api } from '../lib/api'
 import { User } from '../types'
 import toast from 'react-hot-toast'
@@ -8,6 +9,7 @@ import { uploadAvatar, validateFileSize } from '../lib/upload'
 
 export function ProfileScreen() {
   const { profile, updateProfile, user } = useAuth()
+  const { currentTheme, setTheme, themes } = useTheme()
   const [isEditing, setIsEditing] = useState(false)
   const [isEditingChild, setIsEditingChild] = useState(false)
   const [name, setName] = useState('')
@@ -144,32 +146,41 @@ export function ProfileScreen() {
     return (
       <div className="p-4 flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading profile...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="font-body text-gray-600">Loading profile...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="pb-20 lg:pb-0">
-      {/* Header with gradient */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 px-4 lg:px-6 pt-6 lg:pt-8 pb-16 lg:pb-20">
-        <div className="flex items-center justify-between text-white">
-          <h1 className="text-2xl lg:text-3xl font-bold">My Profile</h1>
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="p-2 bg-white bg-opacity-20 rounded-full hover:bg-opacity-30 transition-colors"
-          >
-            <Edit2 className="w-5 h-5" />
-          </button>
+    <div className="h-full flex flex-col">
+      {/* Fixed Header */}
+      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
+        <div className="max-w-4xl lg:mx-auto">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <UserIcon className="w-8 h-8 text-primary-600" />
+              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">My Profile</h1>
+            </div>
+            <button
+              onClick={() => setIsEditing(!isEditing)}
+              className="p-2 bg-bg-tertiary text-text-secondary rounded-full hover:bg-secondary-100 transition-colors"
+            >
+              <Edit2 className="w-5 h-5" />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Profile card - overlapping the header */}
-      <div className="px-4 lg:px-6 -mt-12 lg:-mt-16 mb-6 max-w-2xl lg:mx-auto">
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto">
+
+      {/* Profile card */}
+      <div className="mb-6">
         <div
-          className="bg-white rounded-2xl shadow-xl p-6 lg:p-8"
+          className="bg-bg-primary rounded-2xl shadow-xl p-6 lg:p-8 border border-border-primary"
         >
           {/* Avatar section */}
           <div className="text-center mb-6">
@@ -200,7 +211,7 @@ export function ProfileScreen() {
               </div>
               {isUploading && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500"></div>
                 </div>
               )}
             </div>
@@ -212,18 +223,18 @@ export function ProfileScreen() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Enter your name"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent text-center"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-center font-body"
                 />
                 <div className="flex gap-2">
                   <button
                     onClick={() => setIsEditing(false)}
-                    className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                    className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-medium font-body hover:bg-gray-200 transition-colors"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleSave}
-                    className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-2 rounded-lg font-medium hover:shadow-lg transition-all"
+                    className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-2 rounded-lg font-medium font-body hover:shadow-lg transition-all"
                   >
                     Save
                   </button>
@@ -231,10 +242,10 @@ export function ProfileScreen() {
               </div>
             ) : (
               <div>
-                <h2 className="text-xl font-bold text-gray-900 mb-1">
+                <h2 className="text-xl font-bold font-heading text-gray-900 mb-1">
                   {profile.name || 'Team Member'}
                 </h2>
-                <p className="text-gray-600">{profile.email}</p>
+                <p className="font-body text-gray-600">{profile.email}</p>
               </div>
             )}
           </div>
@@ -244,7 +255,7 @@ export function ProfileScreen() {
             <div
               className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6"
             >
-              <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+              <h3 className="font-semibold font-heading text-gray-900 mb-3 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />
                 Child Assignment
               </h3>
@@ -253,14 +264,14 @@ export function ProfileScreen() {
                 <div className="space-y-4">
                   {loadingPlayers ? (
                     <div className="text-center py-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-orange-500 mx-auto"></div>
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500 mx-auto"></div>
                     </div>
                   ) : (
                     <>
                       {/* Existing Players */}
                       {players.length > 0 && (
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                          <label className="block text-sm font-medium font-body text-gray-700 mb-2">
                             Select from registered players:
                           </label>
                           <select
@@ -270,7 +281,7 @@ export function ProfileScreen() {
                               setManualEmail('')
                               setShowManualEntry(false)
                             }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
                           >
                             <option value="">No child selected</option>
                             {players.map((player) => (
@@ -289,7 +300,7 @@ export function ProfileScreen() {
                             setShowManualEntry(!showManualEntry)
                             setSelectedChild('')
                           }}
-                          className="text-sm text-blue-600 hover:text-blue-700 font-medium"
+                          className="text-sm text-blue-600 hover:text-blue-700 font-medium font-body"
                         >
                           {showManualEntry ? 'Hide manual entry' : 'Enter email manually'}
                         </button>
@@ -301,7 +312,7 @@ export function ProfileScreen() {
                               value={manualEmail}
                               onChange={(e) => setManualEmail(e.target.value)}
                               placeholder="child@email.com"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
                             />
                           </div>
                         )}
@@ -312,13 +323,13 @@ export function ProfileScreen() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => setIsEditingChild(false)}
-                      className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                      className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-medium font-body hover:bg-gray-200 transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleSaveChild}
-                      className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-2 rounded-lg font-medium hover:shadow-lg transition-all"
+                      className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-2 rounded-lg font-medium font-body hover:shadow-lg transition-all"
                     >
                       Save
                     </button>
@@ -331,20 +342,20 @@ export function ProfileScreen() {
                     <div>
                       {profile.childId ? (
                         <>
-                          <p className="font-medium text-gray-900">Child assigned</p>
-                          <p className="text-sm text-gray-600">Tracking a player's progress</p>
+                          <p className="font-medium font-body text-gray-900">Child assigned</p>
+                          <p className="text-sm font-body text-gray-600">Tracking a player's progress</p>
                         </>
                       ) : (
                         <>
-                          <p className="font-medium text-gray-900">No child assigned</p>
-                          <p className="text-sm text-gray-600">Select a player to track</p>
+                          <p className="font-medium font-body text-gray-900">No child assigned</p>
+                          <p className="text-sm font-body text-gray-600">Select a player to track</p>
                         </>
                       )}
                     </div>
                   </div>
                   <button
                     onClick={handleEditChild}
-                    className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg font-medium hover:bg-blue-100 transition-colors"
+                    className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg font-medium font-body hover:bg-blue-100 transition-colors"
                   >
                     {profile.childId ? 'Change' : 'Assign'}
                   </button>
@@ -357,13 +368,13 @@ export function ProfileScreen() {
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-orange-50 rounded-xl p-4 text-center">
               <Award className="w-6 h-6 text-orange-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-orange-600">{profile.totalPoints || 0}</div>
-              <div className="text-sm text-orange-700">Total Points</div>
+              <div className="text-2xl font-bold font-body text-orange-600">{profile.totalPoints || 0}</div>
+              <div className="text-sm font-body text-orange-700">Total Points</div>
             </div>
             <div className="bg-green-50 rounded-xl p-4 text-center">
               <Target className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-green-600">0</div>
-              <div className="text-sm text-green-700">This Week</div>
+              <div className="text-2xl font-bold font-body text-green-600">0</div>
+              <div className="text-sm font-body text-green-700">This Week</div>
             </div>
           </div>
         </div>
@@ -371,6 +382,55 @@ export function ProfileScreen() {
 
       {/* Activity sections */}
       <div className="px-4 lg:px-6 space-y-4 lg:space-y-6 max-w-2xl lg:mx-auto">
+        {/* Theme Selection */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+          <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <Palette className="w-5 h-5 text-purple-500" />
+            Choose Your Theme
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {Object.values(themes).map((theme) => (
+              <button
+                key={theme.name}
+                onClick={() => setTheme(theme.name)}
+                className={`relative p-3 rounded-lg border-2 transition-all ${
+                  currentTheme === theme.name
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {/* Theme Preview */}
+                <div className="flex items-center gap-2 mb-2">
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: theme.colors.primary[500] }}
+                  />
+                  <div
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: theme.colors.secondary[500] }}
+                  />
+                </div>
+                
+                <div className="text-left">
+                  <div className="font-medium font-body text-sm text-gray-900">
+                    {theme.displayName}
+                  </div>
+                  <div className="text-xs font-body text-gray-600">
+                    {theme.description}
+                  </div>
+                </div>
+                
+                {/* Active indicator */}
+                {currentTheme === theme.name && (
+                  <div className="absolute top-2 right-2 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center">
+                    <div className="w-2 h-2 bg-white rounded-full" />
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* Recent activity */}
         <div
           className="bg-white rounded-xl shadow-sm border border-gray-100 p-4"
@@ -380,25 +440,26 @@ export function ProfileScreen() {
             Recent Activity
           </h3>
           <div className="text-center py-4">
-            <div className="text-gray-400 text-sm">No recent activity</div>
-            <p className="text-xs text-gray-500 mt-1">Start training to see your progress here!</p>
+            <div className="text-gray-400 text-sm font-body">No recent activity</div>
+            <p className="text-xs font-body text-gray-500 mt-1">Start training to see your progress here!</p>
           </div>
         </div>
-
 
         {/* Profile stats */}
         <div
           className="bg-gradient-to-r from-orange-50 to-green-50 rounded-xl p-4 border border-orange-200"
         >
           <div className="text-center">
-            <h3 className="font-semibold text-gray-900 mb-2">Member Since</h3>
-            <p className="text-gray-600">
+            <h3 className="font-semibold font-heading text-gray-900 mb-2">Member Since</h3>
+            <p className="font-body text-gray-600">
               {new Date(profile.createdAt).toLocaleDateString('en-US', {
                 month: 'long',
                 year: 'numeric'
               })}
             </p>
           </div>
+        </div>
+      </div>
         </div>
       </div>
     </div>

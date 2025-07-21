@@ -75,26 +75,33 @@ export function ParentDashboard() {
     return (
       <div className="p-4 flex items-center justify-center min-h-screen">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-orange-500 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="font-body text-gray-600">Loading dashboard...</p>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="pb-20 lg:pb-0">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-6 lg:p-8">
-        <h1 className="text-2xl lg:text-3xl font-bold mb-2">Parent Dashboard</h1>
-        <p className="text-orange-100">Track your child's basketball progress</p>
+    <div className="h-full flex flex-col">
+      {/* Fixed Header */}
+      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
+        <div className="max-w-4xl lg:mx-auto">
+          <div className="flex items-center gap-3 mb-2">
+            <Shield className="w-8 h-8 text-primary-600" />
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Parent Dashboard</h1>
+          </div>
+          <p className="text-text-secondary font-body">Track your child's basketball progress</p>
+        </div>
       </div>
 
-      <div className="p-4 lg:p-6 space-y-6 max-w-4xl lg:mx-auto">
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto space-y-6">
         {/* Child Selection */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-blue-500" />
+        <div className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-6">
+          <h3 className="text-lg font-semibold font-heading text-text-primary mb-4 flex items-center gap-2">
+            <UserIcon className="w-5 h-5 text-primary-600" />
             Select Your Child
           </h3>
           
@@ -107,7 +114,7 @@ export function ParentDashboard() {
                   assignChild(childId)
                 }
               }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
             >
               <option value="">Select a player...</option>
               {players.map((player) => (
@@ -126,15 +133,15 @@ export function ParentDashboard() {
                     className="w-10 h-10 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
+                  <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
                     {selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()}
                   </div>
                 )}
                 <div>
-                  <p className="font-semibold text-green-800">
+                  <p className="font-semibold font-body text-green-800">
                     Currently tracking: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
                   </p>
-                  <p className="text-sm text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
+                  <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
                 </div>
               </div>
             )}
@@ -146,10 +153,10 @@ export function ParentDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-3">
-                <Trophy className="w-8 h-8 text-orange-500" />
+                <Trophy className="w-8 h-8 text-primary-500" />
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
-                  <div className="text-sm text-gray-600">Total Points</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
+                  <div className="text-sm font-body text-gray-600">Total Points</div>
                 </div>
               </div>
             </div>
@@ -157,8 +164,8 @@ export function ParentDashboard() {
               <div className="flex items-center gap-3">
                 <Target className="w-8 h-8 text-green-500" />
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">{childWorkouts.length}</div>
-                  <div className="text-sm text-gray-600">Total Workouts</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">{childWorkouts.length}</div>
+                  <div className="text-sm font-body text-gray-600">Total Workouts</div>
                 </div>
               </div>
             </div>
@@ -166,7 +173,7 @@ export function ParentDashboard() {
               <div className="flex items-center gap-3">
                 <Calendar className="w-8 h-8 text-blue-500" />
                 <div>
-                  <div className="text-2xl font-bold text-gray-900">
+                  <div className="text-2xl font-bold font-body text-gray-900">
                     {childWorkouts.filter(w => {
                       const workoutDate = new Date(w.created_at)
                       const today = new Date()
@@ -175,7 +182,7 @@ export function ParentDashboard() {
                       return diffDays <= 7
                     }).length}
                   </div>
-                  <div className="text-sm text-gray-600">This Week</div>
+                  <div className="text-sm font-body text-gray-600">This Week</div>
                 </div>
               </div>
             </div>
@@ -186,7 +193,7 @@ export function ParentDashboard() {
         {selectedChild && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <h3 className="text-lg font-semibold font-heading text-gray-900 flex items-center gap-2">
                 <Award className="w-5 h-5 text-purple-500" />
                 Recent Training Sessions
               </h3>
@@ -195,7 +202,7 @@ export function ParentDashboard() {
             {childWorkouts.length === 0 ? (
               <div className="p-8 text-center">
                 <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500">No workouts recorded yet</p>
+                <p className="font-body text-gray-500">No workouts recorded yet</p>
               </div>
             ) : (
               <div className="divide-y divide-gray-100">
@@ -209,32 +216,32 @@ export function ParentDashboard() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
+                        <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
                           {workout.exercise_type === 'dribbling' && '⚡'}
                           {workout.exercise_type === 'shooting' && '🎯'}
                           {workout.exercise_type === 'conditioning' && '💪'}
                         </div>
                         
                         <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-semibold text-gray-900 capitalize">
+                          <div className="flex items-center gap-2 mb-1 font-body">
+                            <span className="font-semibold font-body text-gray-900 capitalize">
                               {workout.exercise_type}
                             </span>
-                            <span className="text-sm text-gray-500">•</span>
-                            <span className="text-sm text-gray-500">{formatTime(workout.created_at)}</span>
+                            <span className="text-sm font-body text-gray-500">•</span>
+                            <span className="text-sm font-body text-gray-500">{formatTime(workout.created_at)}</span>
                           </div>
-                          <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <div className="flex items-center gap-4 text-sm font-body text-gray-600">
                             <div className="flex items-center gap-1">
                               <Clock className="w-4 h-4" />
-                              <span>{workout.duration_minutes} min</span>
+                              <span className="font-body">{workout.duration_minutes} min</span>
                             </div>
                             <div className="flex items-center gap-1">
-                              <Trophy className="w-4 h-4 text-orange-500" />
-                              <span className="text-orange-600 font-semibold">+{workout.points_earned} pts</span>
+                              <Trophy className="w-4 h-4 text-primary-500" />
+                              <span className="text-primary-600 font-semibold font-body">+{workout.points_earned} pts</span>
                             </div>
                           </div>
                           {workout.notes && (
-                            <p className="text-sm text-gray-500 mt-1 italic">"{workout.notes}"</p>
+                            <p className="text-sm font-body text-gray-500 mt-1 italic">"{workout.notes}"</p>
                           )}
                         </div>
                       </div>
@@ -245,6 +252,7 @@ export function ParentDashboard() {
             )}
           </div>
         )}
+        </div>
       </div>
     </div>
   )

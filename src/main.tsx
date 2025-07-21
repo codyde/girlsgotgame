@@ -13,6 +13,8 @@ Sentry.init({
     Sentry.consoleLoggingIntegration({ levels: ["log", "error", "warn"] })
   ],
 
+  tracePropagationTargets: ["localhost:3001", "api.girlsgotgame.app"],
+
   _experiments: {
     enableLogs: true,
   },

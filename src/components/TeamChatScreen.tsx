@@ -175,16 +175,16 @@ export function TeamChatScreen() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-bg-secondary">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+      <div className="flex items-center justify-between p-4 lg:p-6 border-b border-border-primary bg-bg-primary">
         <div className="flex items-center gap-3">
-          <MessageCircle className="w-6 h-6 text-orange-600" />
-          <h1 className="text-2xl font-bold text-gray-900">TeamChat</h1>
+          <MessageCircle className="w-8 h-8 text-primary-600" />
+          <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Team Chat</h1>
         </div>
         
         {/* Connection status */}
-        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm ${
+        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-body ${
           isConnected ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
         }`}>
           <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : 'bg-red-500'}`} />
@@ -197,20 +197,20 @@ export function TeamChatScreen() {
         <div className="relative">
           <button
             onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-            className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors"
+            className="flex items-center justify-between w-full p-3 bg-gray-50 rounded-lg border border-gray-200 hover:bg-gray-100 transition-colors font-body"
           >
             <div className="flex items-center gap-2">
               {chatMode === 'team' ? (
                 <>
-                  <Users className="w-5 h-5 text-orange-600" />
-                  <span className="font-medium">
+                  <Users className="w-5 h-5 text-primary-600" />
+                  <span className="font-medium font-body">
                     {selectedTeam ? selectedTeam.name : 'Select Team'}
                   </span>
                 </>
               ) : (
                 <>
                   <MessageCircle className="w-5 h-5 text-blue-600" />
-                  <span className="font-medium">
+                  <span className="font-medium font-body">
                     {selectedDMUser ? selectedDMUser.name : 'Direct Message'}
                   </span>
                 </>
@@ -223,11 +223,11 @@ export function TeamChatScreen() {
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 max-h-60 overflow-y-auto">
               {/* Team channels */}
               <div className="border-b border-gray-100">
-                <div className="px-3 py-2 text-xs font-medium text-gray-500 uppercase tracking-wide bg-gray-50">
+                <div className="px-3 py-2 text-xs font-medium font-body text-gray-500 uppercase tracking-wide bg-gray-50">
                   Team Channels
                 </div>
                 {teams.length === 0 ? (
-                  <div className="p-3 text-sm text-gray-500">
+                  <div className="p-3 text-sm font-body text-gray-500">
                     No teams available. Ask an admin to add you to a team.
                   </div>
                 ) : (
@@ -240,13 +240,13 @@ export function TeamChatScreen() {
                         setSelectedDMUser(null)
                         setIsDropdownOpen(false)
                       }}
-                      className="flex items-center gap-2 w-full p-3 hover:bg-gray-50 transition-colors text-left"
+                      className="flex items-center gap-2 w-full p-3 hover:bg-gray-50 transition-colors text-left font-body"
                     >
-                      <Users className="w-5 h-5 text-orange-600" />
+                      <Users className="w-5 h-5 text-primary-600" />
                       <div>
-                        <div className="font-medium">{team.name}</div>
+                        <div className="font-medium font-body">{team.name}</div>
                         {team.description && (
-                          <div className="text-xs text-gray-500">{team.description}</div>
+                          <div className="text-xs font-body text-gray-500">{team.description}</div>
                         )}
                       </div>
                     </button>
@@ -262,10 +262,10 @@ export function TeamChatScreen() {
                   setSelectedTeam(null)
                   setIsUserSearchOpen(true)
                 }}
-                className="flex items-center gap-2 w-full p-3 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 w-full p-3 hover:bg-gray-50 transition-colors font-body"
               >
                 <MessageCircle className="w-5 h-5 text-blue-600" />
-                <span>Direct Message</span>
+                <span className="font-body">Direct Message</span>
               </button>
             </div>
           )}
@@ -286,7 +286,7 @@ export function TeamChatScreen() {
                   setIsUserSearchOpen(true)
                 }}
                 onFocus={() => setIsUserSearchOpen(true)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 font-body"
               />
             </div>
 
@@ -301,16 +301,16 @@ export function TeamChatScreen() {
                       setIsUserSearchOpen(false)
                       setSearchResults([])
                     }}
-                    className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0"
+                    className="flex items-center gap-3 w-full p-3 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-b-0 font-body"
                   >
                     <div className="w-8 h-8 bg-orange-100 rounded-full flex items-center justify-center">
-                      <span className="text-sm font-medium text-orange-600">
+                      <span className="text-sm font-medium font-body text-primary-600">
                         {user.name?.[0]?.toUpperCase() || '?'}
                       </span>
                     </div>
                     <div className="text-left">
-                      <div className="font-medium text-gray-900">{user.name}</div>
-                      <div className="text-sm text-gray-500">{user.email}</div>
+                      <div className="font-medium font-body text-gray-900">{user.name}</div>
+                      <div className="text-sm font-body text-gray-500">{user.email}</div>
                     </div>
                   </button>
                 ))}
@@ -326,18 +326,18 @@ export function TeamChatScreen() {
           <div className="flex items-center justify-center h-full text-gray-500">
             <div className="text-center">
               <MessageCircle className="w-12 h-12 text-gray-300 mx-auto mb-2" />
-              <p>No messages yet. Start the conversation!</p>
+              <p className="font-body">No messages yet. Start the conversation!</p>
             </div>
           </div>
         ) : (
           messages.map((message) => (
             <div key={message.id} className="flex justify-start">
-              <div className="max-w-xs lg:max-w-md xl:max-w-lg bg-gray-100 text-gray-900 rounded-lg px-4 py-2 shadow-sm">
-                <div className="text-xs font-medium text-gray-600 mb-1">
+              <div className="max-w-xs lg:max-w-md xl:max-w-lg bg-gray-100 text-gray-900 rounded-lg px-4 py-2 shadow-sm font-body">
+                <div className="text-xs font-medium font-body text-gray-600 mb-1">
                   {message.senderName}
                 </div>
-                <div className="text-sm">{message.content}</div>
-                <div className="text-xs mt-1 text-gray-500">
+                <div className="text-sm font-body">{message.content}</div>
+                <div className="text-xs mt-1 font-body text-gray-500">
                   {formatMessageTime(message.createdAt)}
                 </div>
               </div>
@@ -363,12 +363,12 @@ export function TeamChatScreen() {
             onChange={(e) => setNewMessage(e.target.value)}
             onKeyPress={handleKeyPress}
             disabled={!isConnected || (chatMode === 'team' && !selectedTeam) || (chatMode === 'dm' && !selectedDMUser)}
-            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-50 disabled:text-gray-400"
+            className="flex-1 px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 disabled:bg-gray-50 disabled:text-gray-400 font-body"
           />
           <button
             onClick={sendMessage}
             disabled={!newMessage.trim() || !isConnected || (chatMode === 'team' && !selectedTeam) || (chatMode === 'dm' && !selectedDMUser)}
-            className="px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            className="px-4 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors font-body"
           >
             <Send className="w-5 h-5" />
           </button>

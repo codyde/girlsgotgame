@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send } from 'lucide-react'
+import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../hooks/useAuth'
 import { Post } from '../types'
@@ -469,7 +469,7 @@ export function FeedScreen() {
       )
     }
     return (
-      <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold">
+      <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
         {getUserInitials(profileData?.name || null, email)}
       </div>
     )
@@ -502,17 +502,20 @@ export function FeedScreen() {
   }
 
   return (
-    <div className="h-full flex flex-col" style={{ backgroundColor: '#fff' }}>
+    <div className="h-full flex flex-col bg-bg-secondary">
       {/* Fixed Header */}
-      <div className="bg-white border-b border-gray-200 p-4 lg:p-6 flex-shrink-0 z-40" style={{ backgroundColor: '#fff' }}>
+      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0 z-40">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl lg:text-3xl font-bold text-gray-900">Team Feed</h1>
+          <div className="flex items-center gap-3">
+            <Home className="w-8 h-8 text-primary-600" />
+            <h1 className="text-3xl lg:text-4xl font-heading font-bold text-text-primary">Team Feed</h1>
+          </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 fetchPosts()
               }}
-              className="bg-gray-100 text-gray-600 p-3 rounded-full hover:bg-gray-200 transition-all"
+              className="bg-bg-tertiary text-text-secondary p-3 rounded-full hover:bg-secondary-100 transition-all"
               title="Refresh feed"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -521,7 +524,7 @@ export function FeedScreen() {
             </button>
             <button
               onClick={() => setShowNewPost(true)}
-              className="bg-gradient-to-r from-orange-500 to-orange-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
+              className="bg-gradient-to-r from-primary-500 to-primary-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
             >
               <Plus className="w-5 h-5" />
             </button>
@@ -544,15 +547,14 @@ export function FeedScreen() {
             }}
           >
             <div
-              className="bg-white rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
-              style={{ backgroundColor: '#fff' }}
+              className="bg-bg-primary rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-bold text-gray-900">Share with the Team</h3>
+                <h3 className="text-xl font-heading font-bold text-text-primary">Share with the Team</h3>
                 <button
                   onClick={closeModal}
-                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                  className="p-2 hover:bg-bg-tertiary rounded-full transition-colors"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -598,7 +600,7 @@ export function FeedScreen() {
                 value={newPost}
                 onChange={(e) => setNewPost(e.target.value)}
                 placeholder="Share your training progress, achievements, or motivate your teammates..."
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none font-body"
                 rows={4}
               />
 
@@ -612,7 +614,7 @@ export function FeedScreen() {
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors font-body"
                 >
                   <Camera className="w-4 h-4" />
                   Photo/Video
@@ -622,14 +624,14 @@ export function FeedScreen() {
               <div className="flex gap-3 mt-4">
                 <button
                   onClick={closeModal}
-                  className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                  className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-lg font-medium hover:bg-gray-200 transition-colors font-body"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={createPost}
                   disabled={(!newPost.trim() && !selectedFile) || isUploading}
-                  className="flex-1 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 rounded-lg font-medium disabled:opacity-50 hover:shadow-lg transition-all"
+                  className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-3 rounded-lg font-medium disabled:opacity-50 hover:shadow-lg transition-all font-body"
                 >
                   {isUploading ? 'Sharing...' : 'Share'}
                 </button>
@@ -643,8 +645,8 @@ export function FeedScreen() {
           {posts.length === 0 ? (
             <div className="text-center py-8 px-4">
               <div className="text-4xl mb-4">🏀</div>
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">No posts yet!</h3>
-              <p className="text-gray-500">Be the first to share your training progress</p>
+              <h3 className="text-lg font-heading font-semibold text-gray-700 mb-2">No posts yet!</h3>
+              <p className="text-gray-500 font-body">Be the first to share your training progress</p>
             </div>
           ) : (
           posts.map((post, index) => {
@@ -656,7 +658,7 @@ export function FeedScreen() {
               <div
                 key={post.id}
                 className={`bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-200 border mb-4 overflow-hidden ${
-                  isOptimistic ? 'border-orange-200 bg-orange-50/30' : 'border-gray-100'
+                  isOptimistic ? 'border-primary-200 bg-primary-50/30' : 'border-gray-100'
                 }`}
                 style={{ backgroundColor: isOptimistic ? undefined : '#fff' }}
               >
@@ -664,12 +666,12 @@ export function FeedScreen() {
                 <div className="flex items-center gap-3 p-4">
                   {getUserAvatar(post.user, (post.user as any)?.email || '')}
                   <div className="flex-1">
-                    <p className="font-semibold text-gray-900">
+                    <p className="font-semibold text-gray-900 font-heading text-lg">
                       {postUser?.name || postUser?.email?.split('@')[0] || 'Unknown User'}
                     </p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-500 font-body">
                       {formatTime(post.createdAt)}
-                      {isOptimistic && <span className="ml-1 text-orange-500">• Sharing...</span>}
+                      {isOptimistic && <span className="ml-1 text-primary-500">• Sharing...</span>}
                     </p>
                   </div>
                 </div>
@@ -677,7 +679,7 @@ export function FeedScreen() {
                 {/* Workout badge */}
                 {post.workout && (
                   <div className="px-4 pb-2">
-                    <div className="inline-flex items-center gap-2 bg-orange-50 text-orange-700 px-3 py-1 rounded-full text-sm">
+                    <div className="inline-flex items-center gap-2 bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-sm font-body">
                       <Trophy className="w-4 h-4" />
                       <span className="capitalize">{postWorkouts?.exerciseType}</span>
                       <span>•</span>
@@ -701,7 +703,7 @@ export function FeedScreen() {
                 {/* Post content */}
                 {post.content && (
                   <div className="px-4 py-3">
-                    <p className="text-gray-800">{post.content}</p>
+                    <p className="text-gray-800 font-body">{post.content}</p>
                   </div>
                 )}
 
@@ -735,7 +737,7 @@ export function FeedScreen() {
 
                   {/* Like count */}
                   {likes[post.id]?.length > 0 && (
-                    <p className="text-sm font-semibold text-gray-900 mb-2">
+                    <p className="text-sm font-semibold text-gray-900 mb-2 font-body">
                       {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
                     </p>
                   )}
@@ -761,26 +763,26 @@ export function FeedScreen() {
                                 }}
                               />
                             ) : (
-                              <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
+                              <div className="w-6 h-6 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-xs">
                                 {getUserInitials(commentUser?.name || null, commentUser?.email || '')}
                               </div>
                             )}
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm">
-                                <span className="font-semibold text-gray-900">
+                              <p className="text-sm font-body">
+                                <span className="font-semibold text-gray-900 font-heading text-lg">
                                   {commentUser?.name || commentUser?.email?.split('@')[0] || 'Unknown User'}
                                 </span>
-                                <span className="text-gray-700 ml-2">{mostRecentComment.content}</span>
+                                <span className="text-gray-700 ml-2 font-body">{mostRecentComment.content}</span>
                               </p>
                               <div className="flex items-center gap-2 mt-1">
-                                <p className="text-xs text-gray-500">
+                                <p className="text-xs text-gray-500 font-body">
                                   {formatTime(mostRecentComment.createdAt)}
-                                  {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
+                                  {isOptimistic && <span className="ml-1 text-primary-500">• Sending...</span>}
                                 </p>
                                 {comments[post.id].length > 1 && (
                                   <button
                                     onClick={() => setShowComments(prev => ({ ...prev, [post.id]: true }))}
-                                    className="text-xs text-gray-500 hover:text-gray-700 font-medium"
+                                    className="text-xs text-gray-500 hover:text-gray-700 font-medium font-body"
                                   >
                                     View all {comments[post.id].length} comments
                                   </button>
@@ -814,20 +816,20 @@ export function FeedScreen() {
                                     }}
                                   />
                                 ) : (
-                                  <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                  <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
                                     {getUserInitials(commentUser?.name || null, commentUser?.email || '')}
                                   </div>
                                 )}
                                 <div className="flex-1">
-                                  <div className={`rounded-lg px-3 py-2 ${isOptimistic ? 'bg-orange-50 border border-orange-200' : 'bg-gray-50'}`}>
-                                    <p className="font-semibold text-sm text-gray-900">
+                                  <div className={`rounded-lg px-3 py-2 ${isOptimistic ? 'bg-primary-50 border border-primary-200' : 'bg-gray-50'}`}>
+                                    <p className="font-semibold text-base text-gray-900 font-heading">
                                       {commentUser?.name || commentUser?.email?.split('@')[0] || 'Unknown User'}
                                     </p>
-                                    <p className="text-gray-800">{comment.content}</p>
+                                    <p className="text-gray-800 font-body">{comment.content}</p>
                                   </div>
-                                  <p className="text-xs text-gray-500 mt-1">
+                                  <p className="text-xs text-gray-500 mt-1 font-body">
                                     {formatTime(comment.createdAt)}
-                                    {isOptimistic && <span className="ml-1 text-orange-500">• Sending...</span>}
+                                    {isOptimistic && <span className="ml-1 text-primary-500">• Sending...</span>}
                                   </p>
                                 </div>
                               </div>
@@ -848,7 +850,7 @@ export function FeedScreen() {
                               }}
                             />
                           ) : (
-                            <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                            <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
                               {getUserInitials(profile?.name || null, profile?.email || '')}
                             </div>
                           )}
@@ -858,7 +860,7 @@ export function FeedScreen() {
                               value={newComment[post.id] || ''}
                               onChange={(e) => setNewComment(prev => ({ ...prev, [post.id]: e.target.value }))}
                               placeholder="Add a comment..."
-                              className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm"
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-orange-500 focus:border-transparent text-sm font-body"
                               onKeyPress={(e) => {
                                 if (e.key === 'Enter') {
                                   addComment(post.id)
