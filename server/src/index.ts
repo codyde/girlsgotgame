@@ -16,6 +16,9 @@ import workoutRoutes from './routes/workouts';
 import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
 import chatRoutes from './routes/chat';
+import inviteRoutes from './routes/invites';
+import accessRequestRoutes from './routes/access-requests';
+import adminRoutes from './routes/admin';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 import { db } from './db/index';
@@ -323,6 +326,9 @@ const initializeServer = async () => {
   app.use('/api/posts', postRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chat', chatRoutes);
+  app.use('/api/invites', inviteRoutes);
+  app.use('/api/access-requests', accessRequestRoutes);
+  app.use('/api/admin', adminRoutes);
 
   // Error handling middleware
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

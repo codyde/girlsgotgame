@@ -3,6 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
+import { eq } from 'drizzle-orm';
 
 // Import the schema for Better Auth
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -26,6 +27,46 @@ const authDb = drizzle(client, { schema });
 
 console.log('🔗 Testing database connection...');
 console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
+
+// Helper function to check user eligibility
+async function checkUserEligibility(email: string): Promise<{ eligible: boolean; reason: string }> {
+  try {
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    // Check if email is banned
+    const bannedEmail = await authDb.query.bannedEmails.findFirst({
+      where: eq(schema.bannedEmails.email, normalizedEmail)
+    });
+    
+    if (bannedEmail) {
+      return { eligible: false, reason: 'banned' };
+    }
+    
+    // Check if user already exists
+    const existingUser = await authDb.query.user.findFirst({
+      where: eq(schema.user.email, normalizedEmail)
+    });
+    
+    if (existingUser) {
+      return { eligible: true, reason: 'existing_user' };
+    }
+    
+    // Check if email is whitelisted
+    const whitelistedEmail = await authDb.query.emailWhitelist.findFirst({
+      where: eq(schema.emailWhitelist.email, normalizedEmail)
+    });
+    
+    if (whitelistedEmail) {
+      return { eligible: true, reason: 'whitelisted' };
+    }
+    
+    // If none of the above, user is not eligible
+    return { eligible: false, reason: 'not_authorized' };
+  } catch (error) {
+    console.error('Error checking user eligibility:', error);
+    return { eligible: false, reason: 'error' };
+  }
+}
 
 export const auth: any = betterAuth({
   database: drizzleAdapter(authDb, {

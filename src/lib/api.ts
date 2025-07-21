@@ -258,6 +258,124 @@ class ApiClient {
       body: JSON.stringify({ name, description }),
     });
   }
+
+  // Invite system endpoints
+  async checkEmailEligibility(email: string) {
+    return this.request(`/invites/check-eligibility/${encodeURIComponent(email)}`);
+  }
+
+  async validateInviteCode(code: string) {
+    return this.request(`/invites/validate/${encodeURIComponent(code)}`);
+  }
+
+  async generateInviteCode(maxUses: number = 1, expiresInDays?: number) {
+    return this.request('/invites/generate', {
+      method: 'POST',
+      body: JSON.stringify({ maxUses, expiresInDays }),
+    });
+  }
+
+  async getMyInvites() {
+    return this.request('/invites/my-invites');
+  }
+
+  async deactivateInviteCode(inviteId: string) {
+    return this.request(`/invites/${inviteId}/deactivate`, {
+      method: 'PATCH',
+    });
+  }
+
+  async useInviteCode(code: string) {
+    return this.request(`/invites/use/${encodeURIComponent(code)}`, {
+      method: 'POST',
+    });
+  }
+
+  // Access request endpoints
+  async submitAccessRequest(email: string, name?: string, message?: string) {
+    return this.request('/access-requests', {
+      method: 'POST',
+      body: JSON.stringify({ email, name, message }),
+    });
+  }
+
+  async getMyAccessRequests() {
+    return this.request('/access-requests/my-requests');
+  }
+
+  // Admin endpoints for invites and access requests
+  async getAllInvitesAdmin() {
+    return this.request('/invites/admin/all');
+  }
+
+  async getAllAccessRequestsAdmin(status?: 'pending' | 'approved' | 'rejected') {
+    const params = status ? `?status=${status}` : '';
+    return this.request(`/access-requests/admin/all${params}`);
+  }
+
+  async approveAccessRequest(requestId: string, addToWhitelist: boolean = true) {
+    return this.request(`/access-requests/admin/${requestId}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ addToWhitelist }),
+    });
+  }
+
+  async rejectAccessRequest(requestId: string, reason?: string) {
+    return this.request(`/access-requests/admin/${requestId}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async getAccessRequestStatsAdmin() {
+    return this.request('/access-requests/admin/stats');
+  }
+
+  // Email whitelist and ban management
+  async getEmailWhitelist() {
+    return this.request('/admin/whitelist');
+  }
+
+  async addEmailToWhitelist(email: string) {
+    return this.request('/admin/whitelist', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async removeEmailFromWhitelist(whitelistId: string) {
+    return this.request(`/admin/whitelist/${whitelistId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getBannedEmails() {
+    return this.request('/admin/banned-emails');
+  }
+
+  async banEmailAddress(email: string, reason?: string) {
+    return this.request('/admin/ban-email', {
+      method: 'POST',
+      body: JSON.stringify({ email, reason }),
+    });
+  }
+
+  async unbanEmailAddress(banId: string) {
+    return this.request(`/admin/ban-email/${banId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getAdminUsers() {
+    return this.request('/admin/users');
+  }
+
+  async removeUser(userId: string, reason?: string, banEmail: boolean = false) {
+    return this.request(`/admin/users/${userId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason, banEmail }),
+    });
+  }
 }
 
 // Export singleton instance

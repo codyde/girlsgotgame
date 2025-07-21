@@ -3,12 +3,13 @@ import { eq, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { user } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { requireEligibility } from '../middleware/eligibility';
 import { createProfileSchema, updateProfileSchema } from '../types';
 
 const router = Router();
 
 // Get current user profile
-router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/me', requireAuth, requireEligibility, async (req: AuthenticatedRequest, res) => {
   try {
     console.log('📖 Profile GET request for user:', req.user!.id);
     const userProfile = await db.query.user.findFirst({

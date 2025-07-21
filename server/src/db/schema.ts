@@ -124,6 +124,51 @@ export const chatMessages = pgTable('chat_messages', {
   createdAt: timestamp('created_at').defaultNow().notNull(),
 });
 
+// Invite system tables
+export const inviteCodes = pgTable('invite_codes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  code: varchar('code', { length: 255 }).notNull().unique(),
+  createdBy: varchar('created_by', { length: 255 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  expiresAt: timestamp('expires_at'),
+  maxUses: integer('max_uses').default(1).notNull(),
+  usedCount: integer('used_count').default(0).notNull(),
+  isActive: boolean('is_active').default(true).notNull(),
+});
+
+export const inviteRegistrations = pgTable('invite_registrations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  inviteCodeId: uuid('invite_code_id').notNull(),
+  userId: varchar('user_id', { length: 255 }).notNull(),
+  registeredAt: timestamp('registered_at').defaultNow().notNull(),
+});
+
+export const accessRequests = pgTable('access_requests', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull(),
+  name: varchar('name', { length: 255 }),
+  message: text('message'),
+  status: varchar('status', { length: 20 }).default('pending').notNull(), // 'pending' | 'approved' | 'rejected'
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  reviewedAt: timestamp('reviewed_at'),
+  reviewedBy: varchar('reviewed_by', { length: 255 }),
+});
+
+export const emailWhitelist = pgTable('email_whitelist', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  addedBy: varchar('added_by', { length: 255 }).notNull(),
+  addedAt: timestamp('added_at').defaultNow().notNull(),
+});
+
+export const bannedEmails = pgTable('banned_emails', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  email: varchar('email', { length: 255 }).notNull().unique(),
+  bannedBy: varchar('banned_by', { length: 255 }).notNull(),
+  bannedAt: timestamp('banned_at').defaultNow().notNull(),
+  reason: text('reason'),
+});
+
 // Relations
 export const userRelations = relations(user, ({ many, one }) => ({
   workouts: many(workouts),
@@ -140,6 +185,11 @@ export const userRelations = relations(user, ({ many, one }) => ({
     fields: [user.childId],
     references: [user.id],
   }),
+  createdInvites: many(inviteCodes),
+  inviteRegistrations: many(inviteRegistrations),
+  whitelistedEmails: many(emailWhitelist),
+  bannedEmails: many(bannedEmails),
+  reviewedAccessRequests: many(accessRequests),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({
@@ -233,5 +283,46 @@ export const chatMessagesRelations = relations(chatMessages, ({ one }) => ({
   team: one(teams, {
     fields: [chatMessages.teamId],
     references: [teams.id],
+  }),
+}));
+
+// Invite system relations
+export const inviteCodesRelations = relations(inviteCodes, ({ one, many }) => ({
+  creator: one(user, {
+    fields: [inviteCodes.createdBy],
+    references: [user.id],
+  }),
+  registrations: many(inviteRegistrations),
+}));
+
+export const inviteRegistrationsRelations = relations(inviteRegistrations, ({ one }) => ({
+  inviteCode: one(inviteCodes, {
+    fields: [inviteRegistrations.inviteCodeId],
+    references: [inviteCodes.id],
+  }),
+  user: one(user, {
+    fields: [inviteRegistrations.userId],
+    references: [user.id],
+  }),
+}));
+
+export const accessRequestsRelations = relations(accessRequests, ({ one }) => ({
+  reviewer: one(user, {
+    fields: [accessRequests.reviewedBy],
+    references: [user.id],
+  }),
+}));
+
+export const emailWhitelistRelations = relations(emailWhitelist, ({ one }) => ({
+  addedByUser: one(user, {
+    fields: [emailWhitelist.addedBy],
+    references: [user.id],
+  }),
+}));
+
+export const bannedEmailsRelations = relations(bannedEmails, ({ one }) => ({
+  bannedByUser: one(user, {
+    fields: [bannedEmails.bannedBy],
+    references: [user.id],
   }),
 }));

@@ -35,12 +35,28 @@ export function useAuth() {
       const { data, error } = await api.getProfile()
 
       if (error) {
+        // If profile doesn't exist, this is a new user post-authentication
+        if (error.includes('404') || error.includes('Profile not found')) {
+          await handleNewUserEligibility(email)
+          return
+        }
+        
         // Only show errors that aren't expected auth failures
         if (!error.includes('401') && !error.includes('Unauthorized') && !error.includes('Not authenticated')) {
           console.error('Error loading profile:', error)
           toast.error('Error loading profile')
         }
       } else {
+        // Even for existing profiles, check if user is still eligible (in case they were banned after signup)
+        const eligibilityCheck = await api.checkEmailEligibility(email)
+        
+        if (eligibilityCheck.error || !eligibilityCheck.data?.eligible) {
+          console.warn('User has profile but is no longer eligible:', eligibilityCheck)
+          await signOut()
+          toast.error('This account is no longer authorized to access the application.')
+          return
+        }
+        
         setProfile(data)
       }
     } catch (error: any) {
@@ -54,6 +70,57 @@ export function useAuth() {
       fetchingProfile.current = false
     }
   }, [])
+
+  const handleNewUserEligibility = useCallback(async (email: string) => {
+    try {
+      // Check for pending invite code
+      const pendingInvite = localStorage.getItem('pendingInvite')
+      
+      if (pendingInvite) {
+        // Validate and use invite code
+        const { data: inviteData, error: inviteError } = await api.validateInviteCode(pendingInvite)
+        
+        if (!inviteError && inviteData) {
+          // Use the invite code
+          const { error: useError } = await api.useInviteCode(pendingInvite)
+          
+          if (!useError) {
+            localStorage.removeItem('pendingInvite')
+            toast.success('Welcome! Your invite has been accepted.')
+            // Refetch profile as user should now exist
+            setTimeout(() => fetchProfile(user!.id, email), 1000)
+            return
+          }
+        }
+        
+        // Invalid invite, remove it
+        localStorage.removeItem('pendingInvite')
+        toast.error('Invalid or expired invite code')
+      }
+
+      // Check email eligibility
+      const { data: eligibilityData, error: eligibilityError } = await api.checkEmailEligibility(email)
+      
+      if (eligibilityError) {
+        throw new Error(eligibilityError)
+      }
+
+      if (eligibilityData.eligible) {
+        // User is eligible (whitelisted), proceed with normal signup
+        toast.success('Welcome! You can now complete your profile.')
+        // User needs to complete onboarding but is eligible
+        setProfile(null) // This will trigger the onboarding flow
+      } else {
+        // User is not eligible, sign them out and show access request option
+        await signOut()
+        toast.error('This account is not authorized. Please request access to join.')
+      }
+    } catch (error: any) {
+      console.error('New user eligibility error:', error)
+      toast.error('Unable to verify account eligibility')
+      await signOut()
+    }
+  }, [user])
 
   const checkSession = useCallback(async () => {
     if (checkingSession.current) return // Prevent multiple simultaneous calls
