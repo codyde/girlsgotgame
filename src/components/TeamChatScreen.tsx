@@ -176,10 +176,7 @@ export function TeamChatScreen() {
       }
     }
 
-    const handleDirectMessage = (message: ChatMessage) => {
-      // Always update the conversation list when a DM is received
-      loadDMConversations()
-      
+    const handleDirectMessage = (message: ChatMessage) => {      
       // If we're in DM mode and viewing the conversation this message belongs to, add it to messages
       if (chatMode === 'dm' && selectedDMUser && 
           (message.senderId === selectedDMUser.id || message.recipientId === selectedDMUser.id)) {
@@ -187,12 +184,34 @@ export function TeamChatScreen() {
       }
     }
 
+    const handleConversationUpdate = (conversation: DMConversation) => {
+      // Update the conversations list when a conversation is updated
+      setDmConversations(prev => {
+        const existingIndex = prev.findIndex(c => c.id === conversation.id)
+        if (existingIndex >= 0) {
+          // Update existing conversation
+          const updated = [...prev]
+          updated[existingIndex] = conversation
+          // Sort by last message timestamp to keep most recent at top
+          return updated.sort((a, b) => 
+            new Date(b.lastMessageTime || 0).getTime() - 
+            new Date(a.lastMessageTime || 0).getTime()
+          )
+        } else {
+          // Add new conversation at the top
+          return [conversation, ...prev]
+        }
+      })
+    }
+
     socket.on('team_message', handleTeamMessage)
     socket.on('direct_message', handleDirectMessage)
+    socket.on('conversation_update', handleConversationUpdate)
 
     return () => {
       socket.off('team_message', handleTeamMessage)
       socket.off('direct_message', handleDirectMessage)
+      socket.off('conversation_update', handleConversationUpdate)
     }
   }, [socket, chatMode, selectedTeam, selectedDMUser])
 
@@ -292,8 +311,6 @@ export function TeamChatScreen() {
         recipientId: selectedDMUser.id,
         content: newMessage.trim(),
       })
-      // Refresh conversation list to update the last message preview
-      setTimeout(() => loadDMConversations(), 100)
     }
 
     setNewMessage('')
