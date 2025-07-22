@@ -74,6 +74,16 @@ export interface DMUser {
   avatarUrl: string | null
 }
 
+export interface DMConversation {
+  id: string
+  name: string
+  email: string
+  avatarUrl: string | null
+  lastMessageContent: string
+  lastMessageSenderName: string
+  lastMessageTime: string
+}
+
 export interface TeamMember {
   id: string
   userId: string

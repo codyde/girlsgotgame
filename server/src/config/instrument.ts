@@ -3,7 +3,7 @@ import { nodeProfilingIntegration } from "@sentry/profiling-node";
 
 // Ensure to call this before importing any other modules!
 Sentry.init({
-  dsn: "https://dee2e8a42b27adf023ef6bd883fda38b@o4509083458994176.ingest.de.sentry.io/4509083467251792",
+  dsn: "https://9d6e922b6d2c2b4ef1273cf4b50c32f4@o4508130833793024.ingest.us.sentry.io/4509703200768000",
 
   // Adds request headers and IP for users, for more info visit:
   // https://docs.sentry.io/platforms/javascript/guides/node/configuration/options/#sendDefaultPii
@@ -12,6 +12,7 @@ Sentry.init({
   integrations: [
     // Add our Profiling integration
     nodeProfilingIntegration(),
+    Sentry.expressIntegration(),
   ],
 
   // Set tracesSampleRate to 1.0 to capture 100%

@@ -67,6 +67,22 @@ app.get('/api/auth/test', (req, res) => {
   res.json({ message: 'Better Auth test route working' });
 });
 
+// Debug route to check Better Auth API methods
+app.get('/api/debug/auth-methods', (req, res) => {
+  try {
+    console.log('🔧 Better Auth API methods:', Object.keys(auth.api));
+    console.log('🔧 Better Auth handlers:', Object.keys(auth.handler || {}));
+    res.json({ 
+      apiMethods: Object.keys(auth.api),
+      handlers: Object.keys(auth.handler || {}),
+      baseUrl: auth.options?.baseURL || 'not set'
+    });
+  } catch (error) {
+    console.error('🔴 Debug error:', error);
+    res.status(500).json({ error: (error as Error).message });
+  }
+});
+
 // Test route to initiate Google OAuth using Better Auth API
 app.get('/api/test-google-signin', async (req, res) => {
   try {
@@ -112,43 +128,9 @@ app.get('/api/auth/error', (req, res) => {
   res.redirect(`http://localhost:5174/?auth_error=${encodeURIComponent(error as string)}`);
 });
 
-// Handle Better Auth routes - use the standard toNodeHandler approach
-app.all('/api/auth/*', async (req, res, next) => {
-  console.log('🔧 Better Auth route hit:', req.method, req.url, req.path);
-  console.log('🔧 Query params:', req.query);
-  console.log('🔧 Headers:', req.headers.host, req.headers.referer);
-  
-  try {
-    const handler = toNodeHandler(auth);
-    console.log('🔧 Handler created, calling...');
-    
-    // Check response status after handler completes
-    const originalSend = res.send;
-    const originalJson = res.json;
-    let responseData = null;
-    
-    res.send = function(data) {
-      responseData = data;
-      console.log('🔧 Response status:', res.statusCode, 'Data:', data);
-      return originalSend.call(this, data);
-    };
-    
-    res.json = function(data) {
-      responseData = data;
-      console.log('🔧 Response status:', res.statusCode, 'JSON:', data);
-      return originalJson.call(this, data);
-    };
-    
-    const result = await handler(req, res);
-    console.log('🔧 Handler completed, result:', result);
-    return result;
-  } catch (error) {
-    console.error('🔴 Better Auth handler error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Better Auth handler failed', details: (error as Error).message });
-    }
-  }
-});
+// Handle Better Auth routes - use the official pattern from documentation
+// IMPORTANT: This MUST come before express.json() middleware
+app.all("/api/auth/*", toNodeHandler(auth));
 
 // NOW add express.json() middleware for other routes
 app.use(express.json());
@@ -243,15 +225,16 @@ io.on('connection', (socket: Socket) => {
   // Handle direct message
   socket.on('direct_message', async (data: { recipientId: string; content: string }) => {
     try {
-      // Verify recipient exists
-      const recipient = await db
-        .select()
-        .from(user)
-        .where(eq(user.id, data.recipientId))
-        .limit(1);
+      
+      // Validate recipientId
+      if (!data.recipientId || typeof data.recipientId !== 'string' || data.recipientId.trim() === '') {
+        socket.emit('error', { message: 'Invalid recipient ID' });
+        return;
+      }
 
-      if (recipient.length === 0) {
-        socket.emit('error', { message: 'Recipient not found' });
+      // Basic validation - just check if recipientId looks like a valid user ID format
+      if (data.recipientId.trim().length < 10) {
+        socket.emit('error', { message: 'Invalid recipient ID format' });
         return;
       }
 
@@ -261,7 +244,7 @@ io.on('connection', (socket: Socket) => {
         .values({
           senderId: user.id,
           teamId: null,
-          recipientId: data.recipientId,
+          recipientId: data.recipientId.trim(),
           content: data.content,
           messageType: 'text',
         })
