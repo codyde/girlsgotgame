@@ -12,6 +12,7 @@ Sentry.init({
   integrations: [
     // Add our Profiling integration
     nodeProfilingIntegration(),
+    Sentry.expressIntegration(),
   ],
 
   // Set tracesSampleRate to 1.0 to capture 100%
