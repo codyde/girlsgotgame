@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X } from 'lucide-react'
 import { Shield } from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/logo.png'
 
 interface NavigationProps {

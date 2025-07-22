@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
+import { setSocketIO } from './lib/socket';
 
 // Route imports
 import authRoutes from './routes/auth';
@@ -38,6 +39,10 @@ const io = new Server(server, {
     credentials: true
   }
 });
+
+// Make socket.io instance available to routes
+setSocketIO(io);
+
 const PORT = process.env.PORT || 3001;
 
 // Middleware (but NOT express.json() yet - it interferes with Better Auth)
@@ -56,18 +61,14 @@ app.get('/health', (req, res) => {
 });
 
 // Better Auth handler MUST come before express.json() middleware
-console.log('🔧 Mounting Better Auth at /api/auth/*');
-console.log('🔧 Auth object:', typeof auth, !!auth.handler);
 
 // Test route to verify routing works
 app.get('/api/auth/test', (req, res) => {
-  console.log('🔧 Test route hit!');
   res.json({ message: 'Better Auth test route working' });
 });
 
 // Test route to initiate Google OAuth using Better Auth API
 app.get('/api/test-google-signin', async (req, res) => {
-  console.log('🔧 Test Google sign-in redirect');
   try {
     // Try to use Better Auth API directly with proper context
     const result = await auth.api.signInSocial({
@@ -176,7 +177,6 @@ io.use(async (socket: Socket, next: (err?: Error) => void) => {
 // Socket.IO connection handling
 io.on('connection', (socket: Socket) => {
   const user = socket.data.user;
-  console.log(`User ${user.name} (${user.id}) connected to chat`);
 
   // Join user to their personal room for DMs
   socket.join(`user_${user.id}`);
@@ -188,13 +188,11 @@ io.on('connection', (socket: Socket) => {
   socket.on('join_team', (teamId: string) => {
     // TODO: Verify user is member of this team
     socket.join(`team_${teamId}`);
-    console.log(`User ${user.name} joined team ${teamId}`);
   });
 
   // Handle leaving a team room
   socket.on('leave_team', (teamId: string) => {
     socket.leave(`team_${teamId}`);
-    console.log(`User ${user.name} left team ${teamId}`);
   });
 
   // Handle team message
@@ -236,7 +234,6 @@ io.on('connection', (socket: Socket) => {
       
       // Broadcast to team room
       io.to(`team_${data.teamId}`).emit('team_message', messageWithSender);
-      console.log(`Team message from ${user.name} to team ${data.teamId}: ${data.content}`);
     } catch (error) {
       console.error('Error saving team message:', error);
       socket.emit('error', { message: 'Failed to send message' });
@@ -283,7 +280,6 @@ io.on('connection', (socket: Socket) => {
       // Send to recipient and sender
       io.to(`user_${data.recipientId}`).emit('direct_message', messageWithSender);
       io.to(`user_${user.id}`).emit('direct_message', messageWithSender);
-      console.log(`DM from ${user.name} to ${data.recipientId}: ${data.content}`);
     } catch (error) {
       console.error('Error saving direct message:', error);
       socket.emit('error', { message: 'Failed to send message' });
@@ -309,7 +305,7 @@ io.on('connection', (socket: Socket) => {
 
   // Handle disconnect
   socket.on('disconnect', () => {
-    console.log(`User ${user.name} (${user.id}) disconnected from chat`);
+    // User disconnected - no logging needed
   });
 });
 

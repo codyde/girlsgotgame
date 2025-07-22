@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { Play, Award, Clock, Star, Trophy } from 'lucide-react'
 import { exerciseTemplates } from '../data/exercises'
 import { api } from '../lib/api'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 export function TrainingScreen() {

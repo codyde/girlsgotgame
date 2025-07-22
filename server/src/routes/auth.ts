@@ -16,11 +16,7 @@ router.get('/me', async (req, res) => {
       return res.status(401).json({ error: 'Not authenticated' });
     }
 
-    console.log('🔍 Session data:', {
-      userId: session.user.id,
-      email: session.user.email,
-      name: session.user.name
-    });
+    // Session validated successfully
 
     res.json({
       user: session.user,

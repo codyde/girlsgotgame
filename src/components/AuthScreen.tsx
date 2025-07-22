@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
 import logo from '../assets/logo.png'
 import { Heart, Share2, TrendingUp } from 'lucide-react'

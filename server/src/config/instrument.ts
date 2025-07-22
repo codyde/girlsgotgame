@@ -30,5 +30,4 @@ Sentry.init({
 
   // Enable logs to be sent to Sentry
   _experiments: { enableLogs: true },
-  debug: true,
 });

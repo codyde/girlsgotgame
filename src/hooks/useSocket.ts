@@ -37,17 +37,18 @@ export function useSocket() {
     })
 
     newSocket.on('connect', () => {
-      console.log('Socket connected:', newSocket.id)
       setIsConnected(true)
     })
 
     newSocket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason)
       setIsConnected(false)
     })
 
     newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error)
+      // Only log actual connection errors, not normal disconnections
+      if (error.message && !error.message.includes('xhr poll error')) {
+        console.error('Socket connection error:', error)
+      }
       setIsConnected(false)
     })
 

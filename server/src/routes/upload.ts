@@ -68,8 +68,6 @@ router.post('/single', upload.single('file'), async (req, res) => {
     // Construct public URL
     const url = `https://${R2_PUBLIC_DOMAIN}/${fileName}`;
 
-    console.log('📸 File uploaded to R2:', url);
-
     res.json({
       url,
       name: fileName,
@@ -112,8 +110,6 @@ router.post('/avatar', upload.single('file'), async (req, res) => {
 
     // Construct public URL
     const url = `https://${R2_PUBLIC_DOMAIN}/${fileName}`;
-
-    console.log('🖼️ Avatar uploaded to R2:', url);
 
     res.json({
       url,

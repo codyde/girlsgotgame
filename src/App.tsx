@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
 import { SessionProvider } from './contexts/SessionContext'
 import { ThemeProvider } from './contexts/ThemeContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import logo from './assets/logo.png'
-import { useAuth } from './hooks/useAuth'
 import { AuthScreen } from './components/AuthScreen'
 import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
@@ -126,7 +126,9 @@ function App() {
   return (
     <ThemeProvider>
       <SessionProvider>
-        <AppContent />
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
       </SessionProvider>
     </ThemeProvider>
   )

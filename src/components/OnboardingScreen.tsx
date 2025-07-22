@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Users, User as UserIcon, ArrowRight, Camera, Upload, LogOut } from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 

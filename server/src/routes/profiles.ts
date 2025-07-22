@@ -10,7 +10,6 @@ const router = Router();
 // Get current user profile
 router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    console.log('📖 Profile GET request for user:', req.user!.id);
     const userProfile = await db.query.user.findFirst({
       where: eq(user.id, req.user!.id),
       columns: {
@@ -28,7 +27,6 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         updatedAt: true
       }
     });
-    console.log('📖 User profile found in DB:', JSON.stringify(userProfile, null, 2));
 
     if (!userProfile) {
       return res.status(404).json({ error: 'Profile not found' });
@@ -87,9 +85,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
 // Update profile
 router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
-    console.log('📝 Profile update request body:', JSON.stringify(req.body, null, 2));
     const validatedData = updateProfileSchema.parse(req.body);
-    console.log('📝 Validated data:', JSON.stringify(validatedData, null, 2));
 
     const [updatedUser] = await db.update(user)
       .set({
@@ -112,8 +108,6 @@ router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         updatedAt: user.updatedAt
       });
     
-    console.log('📝 Updated user profile from DB:', JSON.stringify(updatedUser, null, 2));
-
     if (!updatedUser) {
       return res.status(404).json({ error: 'Profile not found' });
     }

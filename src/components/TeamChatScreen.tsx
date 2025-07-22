@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Send, ChevronDown, Search, Users, MessageCircle } from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { Team, ChatMessage, DMUser } from '../types'
 import { useSocket } from '../hooks/useSocket'
 import { api } from '../lib/api'

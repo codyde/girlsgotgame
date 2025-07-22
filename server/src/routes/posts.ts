@@ -4,6 +4,7 @@ import { db } from '../db';
 import { posts, user, workouts, likes, comments } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { createPostSchema, updatePostSchema, createCommentSchema } from '../types';
+import { emitToAll } from '../lib/socket';
 
 const router = Router();
 
@@ -55,7 +56,6 @@ router.get('/feed', async (req, res) => {
       userHasLiked: false // Will be set properly when user is authenticated
     }));
 
-    console.log('📄 Feed posts response:', JSON.stringify(transformedPosts, null, 2));
     res.json(transformedPosts);
   } catch (error) {
     console.error('Get feed error:', error);
@@ -123,6 +123,9 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
       }
     });
 
+    // Emit to all connected clients
+    emitToAll('post_created', completePost);
+
     res.status(201).json(completePost);
   } catch (error) {
     console.error('Create post error:', error);
@@ -151,6 +154,9 @@ router.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
       return res.status(404).json({ error: 'Post not found or unauthorized' });
     }
 
+    // Emit to all connected clients
+    emitToAll('post_updated', updatedPost);
+
     res.json(updatedPost);
   } catch (error) {
     console.error('Update post error:', error);
@@ -176,6 +182,9 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
     if (!deletedPost.length) {
       return res.status(404).json({ error: 'Post not found or unauthorized' });
     }
+
+    // Emit to all connected clients
+    emitToAll('post_deleted', id);
 
     res.status(204).send();
   } catch (error) {

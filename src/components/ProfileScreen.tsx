@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon, Palette } from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
 import { api } from '../lib/api'
 import { User } from '../types'
@@ -109,20 +109,15 @@ export function ProfileScreen() {
       }
       
       setIsUploading(true)
-      console.log('🖼️ Starting avatar upload to R2:', file.name);
       
-      const result = await uploadAvatar(file, (progress) => {
-        console.log(`📊 Upload progress: ${progress.percentage}%`);
-      });
-      
-      console.log('🖼️ Avatar upload successful:', result.url);
+      const result = await uploadAvatar(file);
       
       // Update profile with new avatar URL
       await updateProfile({ avatarUrl: result.url })
       
       toast.success('Profile photo updated!')
     } catch (error: unknown) {
-      console.error('🖼️ Avatar upload error:', error);
+      console.error('Avatar upload error:', error);
       toast.error(error instanceof Error ? error.message : String(error))
     } finally {
       setIsUploading(false)
@@ -189,9 +184,7 @@ export function ProfileScreen() {
               className={`relative inline-block cursor-pointer ${isUploading ? 'opacity-50' : ''}`}
             >
               {profile.avatarUrl ? (
-                <>
-                  {console.log('🖼️ Rendering avatar with URL:', profile.avatarUrl)}
-                  <img
+                <img
                     src={profile.avatarUrl}
                     alt="Profile"
                     className="w-24 h-24 rounded-full object-cover mx-auto mb-4 shadow-lg"
@@ -200,7 +193,6 @@ export function ProfileScreen() {
                       colorInterpolation: 'sRGB'
                     }}
                   />
-                </>
               ) : (
                 <div className="w-24 h-24 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white text-3xl font-bold mx-auto mb-4 shadow-lg">
                   {profile.name?.[0]?.toUpperCase() || profile.email[0].toUpperCase()}

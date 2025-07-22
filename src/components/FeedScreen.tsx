@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home } from 'lucide-react'
+import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw } from 'lucide-react'
 import { api } from '../lib/api'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
+import { useSocket } from '../hooks/useSocket'
 import { Post } from '../types'
 import toast from 'react-hot-toast'
 import { uploadMedia, validateFileSize } from '../lib/upload'
@@ -111,6 +112,7 @@ const MediaRenderer = ({ url, isOptimisticVideo }: { url: string, isOptimisticVi
 
 export function FeedScreen() {
   const { user, profile } = useAuth()
+  const { socket, isConnected } = useSocket()
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -122,6 +124,7 @@ export function FeedScreen() {
   const [comments, setComments] = useState<Record<string, Comment[]>>({})
   const [showComments, setShowComments] = useState<Record<string, boolean>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
+  const [refreshing, setRefreshing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Helper function to close modal and reset state
@@ -136,8 +139,13 @@ export function FeedScreen() {
   const [isUploading, setIsUploading] = useState(false)
 
 
+  const fetchingPosts = useRef(false)
+
   const fetchPosts = useCallback(async () => {
+    if (fetchingPosts.current) return // Prevent duplicate calls
+    
     try {
+      fetchingPosts.current = true
       const { data: postsData, error: postsError } = await api.getFeed()
 
       if (postsError) throw new Error(postsError)
@@ -166,25 +174,63 @@ export function FeedScreen() {
       toast.error('Error loading posts: ' + String(error))
     } finally {
       setLoading(false)
+      fetchingPosts.current = false
     }
   }, [])
 
 
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    setRefreshing(true)
+    await fetchPosts()
+    setRefreshing(false)
+  }
+
   // Set up feed loading
   useEffect(() => {
     fetchPosts()
-
-
-    // Poll for new posts every 30 seconds instead of realtime
-    const pollInterval = setInterval(() => {
-      fetchPosts()
-    }, 30000)
-
-    // Cleanup polling
-    return () => {
-      clearInterval(pollInterval)
-    }
   }, [fetchPosts])
+
+  // Set up websocket listeners for real-time updates
+  useEffect(() => {
+    if (!socket) return
+
+    const handlePostCreated = (post: Post) => {
+      setPosts(prev => [post, ...prev])
+      
+      // Initialize likes and comments for new post
+      setLikes(prev => ({ ...prev, [post.id]: [] }))
+      setComments(prev => ({ ...prev, [post.id]: [] }))
+    }
+
+    const handlePostUpdated = (updatedPost: Post) => {
+      setPosts(prev => prev.map(post => 
+        post.id === updatedPost.id ? updatedPost : post
+      ))
+    }
+
+    const handlePostDeleted = (postId: string) => {
+      setPosts(prev => prev.filter(post => post.id !== postId))
+      setLikes(prev => {
+        const { [postId]: _, ...rest } = prev
+        return rest
+      })
+      setComments(prev => {
+        const { [postId]: _, ...rest } = prev
+        return rest
+      })
+    }
+
+    socket.on('post_created', handlePostCreated)
+    socket.on('post_updated', handlePostUpdated)
+    socket.on('post_deleted', handlePostDeleted)
+
+    return () => {
+      socket.off('post_created', handlePostCreated)
+      socket.off('post_updated', handlePostUpdated)
+      socket.off('post_deleted', handlePostDeleted)
+    }
+  }, [socket])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -216,16 +262,12 @@ export function FeedScreen() {
   const uploadFileToR2 = async (file: File): Promise<string | null> => {
     try {
       setIsUploading(true)
-      console.log("📸 Starting R2 upload for:", file.name);
       
-      const result = await uploadMedia(file, (progress) => {
-        console.log(`📊 Upload progress: ${progress.percentage}%`);
-      });
+      const result = await uploadMedia(file);
       
-      console.log("📸 R2 upload successful:", result.url);
       return result.url;
     } catch (error) {
-      console.error('📸 R2 upload error:', error);
+      console.error('Upload error:', error);
       toast.error('Error uploading file: ' + String(error));
       return null;
     } finally {
@@ -512,15 +554,12 @@ export function FeedScreen() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={() => {
-                fetchPosts()
-              }}
-              className="bg-bg-tertiary text-text-secondary p-3 rounded-full hover:bg-secondary-100 transition-all"
-              title="Refresh feed"
+              onClick={handleManualRefresh}
+              className="bg-bg-tertiary text-text-secondary p-3 rounded-full hover:bg-secondary-100 transition-all disabled:opacity-50"
+              title={isConnected ? "Refresh feed (Connected)" : "Refresh feed (Offline - Manual only)"}
+              disabled={refreshing}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
+              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
             <button
               onClick={() => setShowNewPost(true)}

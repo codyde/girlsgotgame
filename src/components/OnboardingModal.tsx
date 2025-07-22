@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Users, User as UserIcon, ArrowRight, Camera, Upload, X, Check, Star } from 'lucide-react'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { api } from '../lib/api'
 import toast from 'react-hot-toast'
 import { uploadAvatar, validateFileSize } from '../lib/upload'
@@ -52,16 +52,12 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
   const uploadImageToR2 = async (file: File): Promise<string | null> => {
     try {
       setIsUploading(true)
-      console.log("🖼️ Starting onboarding avatar upload to R2:", file.name);
       
-      const result = await uploadAvatar(file, (progress) => {
-        console.log(`📊 Upload progress: ${progress.percentage}%`);
-      });
+      const result = await uploadAvatar(file);
       
-      console.log('🖼️ Onboarding avatar upload successful:', result.url);
       return result.url;
     } catch (error: unknown) {
-      console.error('🖼️ Onboarding avatar upload error:', error);
+      console.error('Avatar upload error:', error);
       toast.error('Error uploading image: ' + (error instanceof Error ? error.message : String(error)));
       return null;
     } finally {

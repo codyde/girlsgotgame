@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X } from 'lucide-react'
 import { api } from '../lib/api'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { User, Workout, TeamWithMemberCount, TeamMember } from '../types'
 import toast from 'react-hot-toast'
 
@@ -24,17 +24,15 @@ export function AdminScreen() {
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDescription, setNewTeamDescription] = useState('')
+  const fetchingData = useRef(false)
 
   // Check if user is admin
   const isAdmin = profile?.email === 'codydearkland@gmail.com'
 
-  useEffect(() => {
-    if (isAdmin) {
-      fetchData()
-    }
-  }, [isAdmin])
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
+    if (fetchingData.current) return // Prevent duplicate calls
+    
+    fetchingData.current = true
     try {
       // Fetch all workouts with user profiles
       const { data: workoutData, error: workoutError } = await api.getAllWorkouts()
@@ -60,8 +58,46 @@ export function AdminScreen() {
       toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
+      fetchingData.current = false
     }
-  }
+  }, [])
+
+  // Targeted refresh functions to avoid full data reload
+  const refreshWorkouts = useCallback(async () => {
+    try {
+      const { data: workoutData, error: workoutError } = await api.getAllWorkouts()
+      if (workoutError) throw new Error(workoutError)
+      setWorkouts(workoutData || [])
+    } catch (error) {
+      console.error('Error refreshing workouts:', error)
+    }
+  }, [])
+
+  const refreshRelations = useCallback(async () => {
+    try {
+      const { data: relationData, error: relationError } = await api.getParentChildRelations()
+      if (relationError) throw new Error(relationError)
+      setParentChildRelations(relationData || [])
+    } catch (error) {
+      console.error('Error refreshing relations:', error)
+    }
+  }, [])
+
+  const refreshTeams = useCallback(async () => {
+    try {
+      const { data: teamData, error: teamError } = await api.getAllTeamsAdmin()
+      if (teamError) throw new Error(teamError)
+      setTeams(teamData || [])
+    } catch (error) {
+      console.error('Error refreshing teams:', error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isAdmin) {
+      fetchData()
+    }
+  }, [isAdmin, fetchData])
 
   const deleteWorkout = async (workoutId: string, pointsToDeduct: number, userId: string) => {
     try {
@@ -70,7 +106,7 @@ export function AdminScreen() {
       if (error) throw new Error(error)
 
       toast.success('Workout deleted and points adjusted')
-      fetchData() // Refresh data
+      refreshWorkouts() // Only refresh workouts
     } catch (error: unknown) {
       toast.error('Error deleting workout: ' + (error instanceof Error ? error.message : String(error)))
     }
@@ -82,7 +118,7 @@ export function AdminScreen() {
       if (error) throw new Error(error)
 
       toast.success('Child assignment updated!')
-      fetchData() // Refresh data
+      refreshRelations() // Only refresh relations
       setEditingRelation(null)
     } catch (error: unknown) {
       toast.error('Error updating assignment: ' + (error instanceof Error ? error.message : String(error)))
@@ -103,7 +139,7 @@ export function AdminScreen() {
       setShowCreateTeam(false)
       setNewTeamName('')
       setNewTeamDescription('')
-      fetchData() // Refresh teams
+      refreshTeams() // Only refresh teams
     } catch (error: unknown) {
       toast.error('Error creating team: ' + (error instanceof Error ? error.message : String(error)))
     }
@@ -121,7 +157,7 @@ export function AdminScreen() {
       toast.success('Team deleted successfully')
       setSelectedTeam(null)
       setSelectedTeamMembers([])
-      fetchData() // Refresh teams
+      refreshTeams() // Only refresh teams
     } catch (error: unknown) {
       toast.error('Error deleting team: ' + (error instanceof Error ? error.message : String(error)))
     }
@@ -146,7 +182,7 @@ export function AdminScreen() {
       
       toast.success('Player added to team')
       loadTeamMembers(teamId) // Refresh team members
-      fetchData() // Refresh team counts
+      refreshTeams() // Only refresh team counts
     } catch (error: unknown) {
       toast.error('Error adding team member: ' + (error instanceof Error ? error.message : String(error)))
     }
@@ -163,7 +199,7 @@ export function AdminScreen() {
       
       toast.success('Player removed from team')
       loadTeamMembers(teamId) // Refresh team members
-      fetchData() // Refresh team counts
+      refreshTeams() // Only refresh team counts
     } catch (error: unknown) {
       toast.error('Error removing team member: ' + (error instanceof Error ? error.message : String(error)))
     }

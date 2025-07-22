@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
 import { User as UserIcon, Trophy, Calendar, Target, Clock, Award } from 'lucide-react'
 import { api } from '../lib/api'
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../contexts/AuthContext'
 import { User, Workout } from '../types'
 import toast from 'react-hot-toast'
 
