@@ -1,5 +1,7 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { createAuthMiddleware } from "better-auth/plugins";
+import * as Sentry from "@sentry/node";
 import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
@@ -56,6 +58,44 @@ export const auth: any = betterAuth({
   trustedOrigins: process.env.NODE_ENV === 'production'
       ? ["https://girlsgotgame.app"]
       : ["http://localhost:5173", "http://localhost:5174"],
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      // Log new user registrations to Sentry
+      if (ctx.path.startsWith("/sign-up") || ctx.path.includes("/callback/")) {
+        const newSession = ctx.context.newSession;
+        if (newSession && newSession.user) {
+          const user = newSession.user;
+          
+          const provider = ctx.path.includes("/callback/") ? ctx.path.split("/callback/")[1] : "email";
+          const { logger } = Sentry;
+          
+          // Set user context for Sentry
+          Sentry.setUser({
+            id: user.id,
+            email: user.email,
+            username: user.name
+          });
+
+          // Set tags for filtering
+          Sentry.setTag("event_type", "user_registration");
+          Sentry.setTag("auth_provider", provider);
+
+          // Log the registration event using Sentry logger
+          logger.info(logger.fmt`New user registered: ${user.email} via ${provider}`, {
+            userId: user.id,
+            email: user.email,
+            name: user.name,
+            provider: provider,
+            registrationTime: new Date().toISOString(),
+            userAgent: ctx.request?.headers?.["user-agent"] || "unknown",
+            ip: ctx.request?.headers?.["x-forwarded-for"] || ctx.request?.headers?.["x-real-ip"] || "unknown"
+          });
+
+          console.log('🎉 New user registered and logged to Sentry:', { id: user.id, email: user.email, provider });
+        }
+      }
+    }),
+  },
 });
 
 console.log('🔧 Better Auth initialized successfully');

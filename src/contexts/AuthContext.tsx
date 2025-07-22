@@ -53,7 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           toast.error('Error loading profile')
         }
       } else {
-        setProfile(data)
+        setProfile(data as User)
       }
     } catch (error: any) {
       // Only log and show unexpected errors
@@ -72,9 +72,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     try {
       checkingSession.current = true
+      console.log('🔄 Checking session...');
       const { data: sessionData, error } = await api.getCurrentSession()
       
       if (error || !sessionData) {
+        console.log('❌ Session check failed:', error);
         // Only log non-auth errors (401, Unauthorized, Not authenticated are expected when not logged in)
         if (error && !error.includes('401') && !error.includes('Unauthorized') && !error.includes('Not authenticated')) {
           console.error('Session check error:', error)
@@ -86,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false)
         return
       }
+
+      console.log('✅ Session found:', sessionData);
 
       const userSession = {
         user: {
@@ -126,12 +130,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     // Check for auth redirect callback
     const urlParams = new URLSearchParams(window.location.search)
+    console.log('🔍 URL Params on page load:', window.location.href);
+    console.log('🔍 Auth callback param:', urlParams.get('callback'));
+    
     if (urlParams.get('callback') === 'auth') {
+      console.log('✅ Auth callback detected, checking session immediately');
       // Remove callback param from URL
       window.history.replaceState({}, document.title, window.location.pathname)
       // If we have auth callback, check session immediately
       checkSession()
     } else {
+      console.log('⏱️ No auth callback, checking session with delay');
       // Delay initial auth check slightly to avoid immediate 401 noise on fresh page load
       setTimeout(checkSession, 100)
     }
@@ -157,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw new Error(error)
 
       // Update with server response
-      setProfile(data)
+      setProfile(data as User)
       toast.success('Profile updated!')
     } catch (error: any) {
       console.error('Update profile error:', error)
@@ -172,10 +181,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
-      // Better Auth Google OAuth redirect
-      window.location.href = '/api/auth/sign-in/google'
+      console.log('🚀 Starting Google sign-in process...');
+      
+      // Better Auth Google OAuth - use the correct social sign-in endpoint
+      const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+      const signInUrl = `${backendUrl}/api/auth/sign-in/social`;
+      
+      console.log('📍 Calling sign-in endpoint:', signInUrl);
+      
+      const response = await fetch(signInUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          provider: 'google',
+          callbackURL: window.location.origin + '?callback=auth'
+        }),
+        credentials: 'include'
+      });
+
+      if (!response.ok) {
+        throw new Error(`Sign-in request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Sign-in response:', data);
+
+      if (data.url) {
+        console.log('🔗 Redirecting to Google OAuth:', data.url);
+        window.location.href = data.url;
+      } else {
+        throw new Error('No redirect URL received from server');
+      }
     } catch (error: any) {
-      console.error('Google sign-in error:', error);
+      console.error('❌ Google sign-in error:', error);
       toast.error(error.message || 'Sign in failed')
     }
   }
