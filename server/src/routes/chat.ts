@@ -1,5 +1,5 @@
 import express from 'express';
-import { eq, and, or, desc, asc, isNull, ilike } from 'drizzle-orm';
+import { eq, and, or, desc, asc, isNull, ilike, ne, sql } from 'drizzle-orm';
 import { db } from '../db/index';
 import { teams, teamMembers, chatMessages, user } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
@@ -247,6 +247,90 @@ router.post('/messages', requireAuth, async (req: AuthenticatedRequest, res) => 
 });
 
 // Search users for DM
+// Get DM conversations for the current user with last message preview
+router.get('/conversations', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.user!.id;
+
+    // Get all DM messages for this user
+    const dmMessages = await db
+      .select({
+        messageId: chatMessages.id,
+        senderId: chatMessages.senderId,
+        recipientId: chatMessages.recipientId,
+        content: chatMessages.content,
+        createdAt: chatMessages.createdAt,
+        senderName: user.name,
+      })
+      .from(chatMessages)
+      .innerJoin(user, eq(chatMessages.senderId, user.id))
+      .where(
+        and(
+          isNull(chatMessages.teamId), // DMs only
+          or(
+            eq(chatMessages.senderId, userId),
+            eq(chatMessages.recipientId, userId)
+          )
+        )
+      )
+      .orderBy(desc(chatMessages.createdAt));
+
+    // Process messages to get unique conversations with last message
+    const conversationMap = new Map();
+    
+    for (const message of dmMessages) {
+      const otherUserId = message.senderId === userId ? message.recipientId : message.senderId;
+      
+      if (!conversationMap.has(otherUserId)) {
+        conversationMap.set(otherUserId, {
+          otherUserId,
+          lastMessage: message,
+        });
+      }
+    }
+
+    // Get user details for each conversation
+    const conversationIds = Array.from(conversationMap.keys());
+    if (conversationIds.length === 0) {
+      return res.json([]);
+    }
+
+    const conversationUsers = await db
+      .select({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+      })
+      .from(user)
+      .where(or(...conversationIds.map(id => eq(user.id, id))));
+
+    // Combine user data with last message
+    const conversations = conversationUsers.map(user => {
+      const conversation = conversationMap.get(user.id);
+      const lastMessage = conversation.lastMessage;
+      
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        lastMessageContent: lastMessage.content,
+        lastMessageSenderName: lastMessage.senderId === userId ? 'You' : lastMessage.senderName,
+        lastMessageTime: lastMessage.createdAt,
+      };
+    });
+
+    // Sort by most recent message
+    conversations.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
+
+    res.json(conversations);
+  } catch (error) {
+    console.error('Error fetching DM conversations:', error);
+    res.status(500).json({ error: 'Failed to fetch conversations' });
+  }
+});
+
 router.get('/users/search', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const query = req.query.q as string;
