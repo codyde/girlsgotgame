@@ -3,7 +3,7 @@ import { relations } from 'drizzle-orm';
 
 // Better Auth tables - extended with profile fields
 export const user = pgTable('user', {
-  id: varchar('id', { length: 255 }).primaryKey(),
+  id: text('id').primaryKey(),
   name: varchar('name', { length: 255 }),
   email: varchar('email', { length: 255 }).notNull().unique(),
   emailVerified: boolean('emailVerified').default(false).notNull(),
@@ -17,40 +17,41 @@ export const user = pgTable('user', {
   role: varchar('role', { length: 20 }).default('player').notNull(), // 'parent' | 'player'
   childId: varchar('child_id', { length: 255 }),
   isOnboarded: boolean('is_onboarded').default(false).notNull(),
+  isVerified: boolean('isverified').default(false).notNull(),
   jerseyNumber: integer('jersey_number'),
 });
 
 export const session = pgTable('session', {
-  id: varchar('id', { length: 255 }).primaryKey(),
+  id: text('id').primaryKey(),
   expiresAt: timestamp('expiresAt').notNull(),
-  token: varchar('token', { length: 255 }).notNull().unique(),
+  token: text('token').notNull().unique(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
   ipAddress: varchar('ipAddress', { length: 255 }),
   userAgent: text('userAgent'),
-  userId: varchar('userId', { length: 255 }).notNull().references(() => user.id, { onDelete: 'cascade' }),
+  userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }),
 });
 
 export const account = pgTable('account', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  accountId: varchar('accountId', { length: 255 }).notNull(),
+  id: text('id').primaryKey(),
+  accountId: text('accountId').notNull(),
   providerId: varchar('providerId', { length: 255 }).notNull(),
-  userId: varchar('userId', { length: 255 }).notNull().references(() => user.id, { onDelete: 'cascade' }),
+  userId: text('userId').notNull().references(() => user.id, { onDelete: 'cascade' }),
   accessToken: text('accessToken'),
   refreshToken: text('refreshToken'),
   idToken: text('idToken'),
   accessTokenExpiresAt: timestamp('accessTokenExpiresAt'),
   refreshTokenExpiresAt: timestamp('refreshTokenExpiresAt'),
-  scope: varchar('scope', { length: 255 }),
+  scope: text('scope'),
   password: varchar('password', { length: 255 }),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),
 });
 
 export const verification = pgTable('verification', {
-  id: varchar('id', { length: 255 }).primaryKey(),
-  identifier: varchar('identifier', { length: 255 }).notNull(),
-  value: varchar('value', { length: 255 }).notNull(),
+  id: text('id').primaryKey(),
+  identifier: text('identifier').notNull(),
+  value: text('value').notNull(),
   expiresAt: timestamp('expiresAt').notNull(),
   createdAt: timestamp('createdAt').defaultNow().notNull(),
   updatedAt: timestamp('updatedAt').defaultNow().notNull(),

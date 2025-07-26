@@ -159,6 +159,27 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
       userId,
     });
 
+    // Mark user as verified since they used a valid invite and return updated user
+    const [updatedUser] = await db
+      .update(user)
+      .set({ isVerified: true })
+      .where(eq(user.id, userId))
+      .returning({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        image: user.image,
+        avatarUrl: user.avatarUrl,
+        totalPoints: user.totalPoints,
+        role: user.role,
+        childId: user.childId,
+        isOnboarded: user.isOnboarded,
+        isVerified: user.isVerified,
+        jerseyNumber: user.jerseyNumber,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt
+      });
+
     // Increment the used count
     await db
       .update(inviteCodes)
@@ -172,7 +193,11 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
       component: 'invite-backend' 
     });
 
-    res.json({ success: true, message: 'Invite code used successfully' });
+    res.json({ 
+      success: true, 
+      message: 'Invite code used successfully',
+      updatedProfile: updatedUser
+    });
   } catch (error) {
     logger.error('Error using invite code', { 
       error: error instanceof Error ? error.message : 'Unknown error',

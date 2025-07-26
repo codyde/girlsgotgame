@@ -22,6 +22,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: true,
         childId: true,
         isOnboarded: true,
+        isVerified: true,
         jerseyNumber: true,
         createdAt: true,
         updatedAt: true
@@ -67,6 +68,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: user.role,
         childId: user.childId,
         isOnboarded: user.isOnboarded,
+        isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
@@ -103,6 +105,7 @@ router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: user.role,
         childId: user.childId,
         isOnboarded: user.isOnboarded,
+        isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
@@ -391,6 +394,38 @@ router.delete('/admin/parent-child-relationships/:relationId', requireAuth, asyn
     res.json({ success: true });
   } catch (error) {
     console.error('Remove parent-child relationship error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Approve user (mark as verified)
+router.patch('/admin/approve/:userId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Update user to set isVerified to true
+    const [updatedUser] = await db
+      .update(user)
+      .set({ isVerified: true })
+      .where(eq(user.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, message: 'User approved successfully' });
+  } catch (error) {
+    console.error('Error approving user:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
