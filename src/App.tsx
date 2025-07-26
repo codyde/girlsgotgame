@@ -5,6 +5,8 @@ import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import logo from './assets/logo.png'
 import { AuthScreen } from './components/AuthScreen'
+import { InviteSignUpScreen } from './components/InviteSignUpScreen'
+import { InviteRequiredScreen } from './components/InviteRequiredScreen'
 import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
@@ -19,6 +21,16 @@ function AppContent() {
   const { session, profile, loading } = useAuth()
   const [currentTab, setCurrentTab] = useState('feed')
   const [showOnboarding, setShowOnboarding] = useState(false)
+  const [inviteCode, setInviteCode] = useState<string | null>(null)
+
+  // Check for invite code in URL on component mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const invite = urlParams.get('invite')
+    if (invite) {
+      setInviteCode(invite)
+    }
+  }, [])
 
   // Watch for profile changes and set onboarding state based on database value
   useEffect(() => {
@@ -44,7 +56,27 @@ function AppContent() {
     )
   }
 
-  // Show login screen if not authenticated
+  // Show invite signup screen if there's an invite code and user is not authenticated
+  if (!session && inviteCode) {
+    return (
+      <>
+        <InviteSignUpScreen 
+          inviteCode={inviteCode} 
+          onSignUpComplete={() => {
+            // After successful signup, clear the invite code and let normal auth flow take over
+            setInviteCode(null)
+            // Remove invite parameter from URL
+            const url = new URL(window.location.href)
+            url.searchParams.delete('invite')
+            window.history.replaceState({}, document.title, url.pathname + url.search)
+          }} 
+        />
+        <Toaster position="top-center" />
+      </>
+    )
+  }
+
+  // Show normal login screen for existing users (no invite required)
   if (!session) {
     return (
       <>

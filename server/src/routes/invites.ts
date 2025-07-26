@@ -4,34 +4,38 @@ import { eq, and, desc, count } from 'drizzle-orm';
 import { db } from '../db';
 import { inviteCodes, inviteRegistrations, accessRequests, emailWhitelist, user } from '../db/schema';
 import { requireAuth } from '../middleware/auth';
+import * as Sentry from '@sentry/node';
 
 const router = Router();
 
-// Validate invite code
-router.post('/validate', async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    console.log('🎫 Validating invite code - Request body:', req.body);
-    const { code } = req.body;
+// Get Sentry logger
+const { logger } = Sentry;
 
-    console.log('🎫 Extracted code:', code);
+// Validate invite code - does not require authentication since it's used before signup
+router.post('/validate', async (req, res: Response) => {
+  try {
+    const { code } = req.body;
+    
+    logger.info('Invite code validation requested', { 
+      inviteCode: code, 
+      component: 'invite-backend',
+      endpoint: '/validate'
+    });
 
     if (!code) {
-      console.log('🎫 No code provided');
+      logger.warn('Invite code validation failed - no code provided', {
+        component: 'invite-backend',
+        endpoint: '/validate'
+      });
       return res.status(400).json({ error: 'Invite code is required' });
     }
 
-    // Check for temporary static code first (for testing)
-    if (code === 'TEST123') {
-      console.log('🎫 Static test code detected');
-      return res.json({ 
-        valid: true, 
-        inviteCodeId: 'static-test-code',
-        message: 'Using temporary test code' 
-      });
-    }
-
     // Check if code exists and is valid in database
-    console.log('🎫 Looking up code in database:', code);
+    logger.debug('Looking up invite code in database', { 
+      inviteCode: code, 
+      component: 'invite-backend' 
+    });
+    
     const [inviteCode] = await db
       .select()
       .from(inviteCodes)
@@ -42,26 +46,50 @@ router.post('/validate', async (req: AuthenticatedRequest, res: Response) => {
         )
       );
 
-    console.log('🎫 Database result:', inviteCode);
-
     if (!inviteCode) {
-      console.log('🎫 Code not found in database');
+      logger.error('Invite code validation failed - code not found', { 
+        inviteCode: code, 
+        component: 'invite-backend' 
+      });
       return res.status(400).json({ error: 'Invalid or expired invite code' });
     }
 
     // Check if code has expired
     if (inviteCode.expiresAt && new Date() > inviteCode.expiresAt) {
+      logger.error('Invite code validation failed - code expired', { 
+        inviteCode: code, 
+        inviteCodeId: inviteCode.id,
+        expiresAt: inviteCode.expiresAt,
+        component: 'invite-backend' 
+      });
       return res.status(400).json({ error: 'Invite code has expired' });
     }
 
     // Check if code has reached max uses
     if (inviteCode.usedCount >= inviteCode.maxUses) {
+      logger.error('Invite code validation failed - max uses reached', { 
+        inviteCode: code, 
+        inviteCodeId: inviteCode.id,
+        usedCount: inviteCode.usedCount,
+        maxUses: inviteCode.maxUses,
+        component: 'invite-backend' 
+      });
       return res.status(400).json({ error: 'Invite code has been used the maximum number of times' });
     }
 
+    logger.info('Invite code validation successful', { 
+      inviteCode: code, 
+      inviteCodeId: inviteCode.id,
+      component: 'invite-backend' 
+    });
+
     res.json({ valid: true, inviteCodeId: inviteCode.id });
   } catch (error) {
-    console.error('Error validating invite code:', error);
+    logger.error('Error validating invite code', { 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      inviteCode: req.body?.code,
+      component: 'invite-backend' 
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -72,7 +100,19 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
     const { inviteCodeId } = req.body;
     const userId = req.user!.id;
 
+    logger.info('Invite code usage requested', { 
+      inviteCodeId, 
+      userId, 
+      component: 'invite-backend',
+      endpoint: '/use'
+    });
+
     if (!inviteCodeId) {
+      logger.warn('Invite code usage failed - no invite code ID provided', {
+        userId,
+        component: 'invite-backend',
+        endpoint: '/use'
+      });
       return res.status(400).json({ error: 'Invite code ID is required' });
     }
 
@@ -83,6 +123,13 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
       .where(eq(inviteCodes.id, inviteCodeId));
 
     if (!inviteCode || !inviteCode.isActive) {
+      logger.error('Invite code usage failed - invalid invite code', { 
+        inviteCodeId, 
+        userId,
+        inviteCodeExists: !!inviteCode,
+        isActive: inviteCode?.isActive,
+        component: 'invite-backend' 
+      });
       return res.status(400).json({ error: 'Invalid invite code' });
     }
 
@@ -98,6 +145,11 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
       );
 
     if (existingRegistration) {
+      logger.info('Invite code already used by user', { 
+        inviteCodeId, 
+        userId,
+        component: 'invite-backend' 
+      });
       return res.json({ success: true, message: 'Already registered with this invite code' });
     }
 
@@ -113,9 +165,21 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
       .set({ usedCount: inviteCode.usedCount + 1 })
       .where(eq(inviteCodes.id, inviteCodeId));
 
+    logger.info('Invite code used successfully', { 
+      inviteCodeId, 
+      userId,
+      newUsedCount: inviteCode.usedCount + 1,
+      component: 'invite-backend' 
+    });
+
     res.json({ success: true, message: 'Invite code used successfully' });
   } catch (error) {
-    console.error('Error using invite code:', error);
+    logger.error('Error using invite code', { 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      inviteCodeId: req.body?.inviteCodeId,
+      userId: req.user?.id,
+      component: 'invite-backend' 
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -188,7 +252,21 @@ router.post('/codes', requireAuth, async (req: AuthenticatedRequest, res: Respon
     const { code, expiresAt, maxUses } = req.body;
     const userId = req.user!.id;
 
+    logger.info('Invite code creation requested', { 
+      inviteCode: code,
+      createdBy: userId,
+      maxUses: maxUses || 1,
+      expiresAt,
+      component: 'invite-backend',
+      endpoint: '/codes'
+    });
+
     if (!code) {
+      logger.warn('Invite code creation failed - no code provided', {
+        createdBy: userId,
+        component: 'invite-backend',
+        endpoint: '/codes'
+      });
       return res.status(400).json({ error: 'Invite code is required' });
     }
 
@@ -199,6 +277,12 @@ router.post('/codes', requireAuth, async (req: AuthenticatedRequest, res: Respon
       .where(eq(inviteCodes.code, code));
 
     if (existingCode) {
+      logger.error('Invite code creation failed - code already exists', { 
+        inviteCode: code,
+        createdBy: userId,
+        existingCodeId: existingCode.id,
+        component: 'invite-backend' 
+      });
       return res.status(400).json({ error: 'Invite code already exists' });
     }
 
@@ -212,9 +296,23 @@ router.post('/codes', requireAuth, async (req: AuthenticatedRequest, res: Respon
       })
       .returning();
 
+    logger.info('Invite code created successfully', { 
+      inviteCode: code,
+      inviteCodeId: newCode.id,
+      createdBy: userId,
+      maxUses: newCode.maxUses,
+      expiresAt: newCode.expiresAt,
+      component: 'invite-backend' 
+    });
+
     res.json(newCode);
   } catch (error) {
-    console.error('Error creating invite code:', error);
+    logger.error('Error creating invite code', { 
+      error: error instanceof Error ? error.message : 'Unknown error',
+      inviteCode: req.body?.code,
+      createdBy: req.user?.id,
+      component: 'invite-backend' 
+    });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

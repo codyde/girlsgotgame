@@ -284,6 +284,20 @@ class ApiClient {
       body: JSON.stringify(inviteData),
     });
   }
+
+  async validateInviteCode(code: string) {
+    return this.request('/invites/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async useInviteCode(inviteCodeId: string) {
+    return this.request('/invites/use', {
+      method: 'POST',
+      body: JSON.stringify({ inviteCodeId }),
+    });
+  }
 }
 
 // Export singleton instance

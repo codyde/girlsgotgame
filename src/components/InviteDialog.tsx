@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { X, Copy, Check, UserPlus } from 'lucide-react'
 import { api } from '../lib/api'
+import { appLogger } from '../utils/logger'
 import toast from 'react-hot-toast'
 
 interface InviteDialogProps {
@@ -34,6 +35,9 @@ export function InviteDialog({ isOpen, onClose }: InviteDialogProps) {
       const baseUrl = window.location.origin
       const link = `${baseUrl}?invite=${code}`
       setInviteLink(link)
+      
+      // Log invite link generation
+      appLogger.invite.linkGenerated(code, 'current-user') // TODO: Get actual user ID
       
       toast.success('Invite link generated!')
     } catch (error: any) {

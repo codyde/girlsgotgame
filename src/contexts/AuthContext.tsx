@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { api } from '../lib/api'
+import { appLogger } from '../utils/logger'
 import { User } from '../types'
 import { useSession } from './SessionContext'
 import toast from 'react-hot-toast'
@@ -132,13 +133,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const urlParams = new URLSearchParams(window.location.search)
     console.log('🔍 URL Params on page load:', window.location.href);
     console.log('🔍 Auth callback param:', urlParams.get('callback'));
+    console.log('🔍 Signup param:', urlParams.get('signup'));
     
     if (urlParams.get('callback') === 'auth') {
       console.log('✅ Auth callback detected, checking session immediately');
-      // Remove callback param from URL
-      window.history.replaceState({}, document.title, window.location.pathname)
+      
+      // Check if this is a signup flow (from invite link)
+      const isSignup = urlParams.get('signup') === 'true'
+      
+      // Remove callback and signup params from URL but preserve other params
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.delete('callback')
+      newUrl.searchParams.delete('signup')
+      window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search)
+      
       // If we have auth callback, check session immediately
-      checkSession()
+      checkSession().then(() => {
+        // After session is established, process any pending invite code
+        if (isSignup) {
+          const pendingInviteCodeId = sessionStorage.getItem('pendingInviteCodeId')
+          if (pendingInviteCodeId) {
+            appLogger.invite.callbackReceived(pendingInviteCodeId, user?.id)
+            appLogger.invite.usageStart(pendingInviteCodeId, user?.id || 'unknown')
+            console.log('🎫 Processing pending invite code:', pendingInviteCodeId)
+            
+            api.useInviteCode(pendingInviteCodeId).then(({ error }) => {
+              if (error) {
+                appLogger.invite.usageError(pendingInviteCodeId, user?.id || 'unknown', error)
+                console.error('❌ Failed to use invite code:', error)
+              } else {
+                appLogger.invite.usageSuccess(pendingInviteCodeId, user?.id || 'unknown')
+                if (user?.id && user?.email) {
+                  appLogger.invite.signupComplete(pendingInviteCodeId, user.id, user.email)
+                }
+                console.log('✅ Invite code used successfully')
+              }
+              // Clear the pending invite code
+              sessionStorage.removeItem('pendingInviteCodeId')
+            })
+          }
+        }
+      })
     } else {
       console.log('⏱️ No auth callback, checking session with delay');
       // Delay initial auth check slightly to avoid immediate 401 noise on fresh page load
