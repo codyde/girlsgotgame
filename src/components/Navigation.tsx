@@ -1,8 +1,9 @@
 import React, { useState } from 'react'
-import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X } from 'lucide-react'
+import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X, UserPlus } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/logo.png'
+import { InviteDialog } from './InviteDialog'
 
 interface NavigationProps {
   currentTab: string
@@ -10,11 +11,14 @@ interface NavigationProps {
 }
 
 export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
-  const { signOut, user } = useAuth()
+  const { signOut, user, profile } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
   const isParentWithChild = user?.role === 'parent' && user?.childId
+  const isParent = profile?.role === 'parent'
+  const canCreateInvites = isAdmin || isParent
 
   const tabs = [
     { id: 'feed', label: 'Feed', icon: Home },
@@ -61,6 +65,15 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
         </div>
         
         <div className="mt-auto pt-4 border-t border-border-primary">
+          {canCreateInvites && (
+            <button
+              onClick={() => setInviteDialogOpen(true)}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary-600 hover:text-primary-700 hover:bg-primary-50 transition-colors text-left font-heading mb-2"
+            >
+              <UserPlus className="w-5 h-5" />
+              <span className="font-medium font-heading text-2xl">Create Invite</span>
+            </button>
+          )}
           <button
             onClick={() => {
               console.log('Desktop sign out clicked')
@@ -158,6 +171,18 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
 
                 {/* Sign Out Button */}
                 <div className="p-4 border-t border-border-primary">
+                  {canCreateInvites && (
+                    <button
+                      onClick={() => {
+                        setInviteDialogOpen(true)
+                        setMobileMenuOpen(false)
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary-600 hover:text-primary-700 hover:bg-primary-50 transition-colors text-left font-heading mb-2"
+                    >
+                      <UserPlus className="w-5 h-5" />
+                      <span className="font-medium font-heading text-2xl">Create Invite</span>
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       console.log('Mobile sign out clicked')
@@ -175,6 +200,12 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
           </>
         )}
       </div>
+
+      {/* Invite Dialog */}
+      <InviteDialog 
+        isOpen={inviteDialogOpen} 
+        onClose={() => setInviteDialogOpen(false)} 
+      />
     </>
   )
 }

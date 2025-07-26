@@ -77,11 +77,11 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-secondary">
+    <div className="h-screen bg-bg-secondary overflow-hidden">
       {/* Desktop Layout */}
-      <div className="hidden lg:flex min-h-screen">
+      <div className="hidden lg:flex h-full">
         {/* Desktop Sidebar */}
-        <div className="w-64 bg-bg-primary shadow-lg border-r border-border-primary flex flex-col">
+        <div className="w-64 bg-bg-primary shadow-lg border-r border-border-primary flex flex-col flex-shrink-0">
           <div className="px-2 py-4 border-b border-border-primary">
             <div className="flex items-center gap-2">
               <div className="w-16 h-16">
@@ -105,9 +105,9 @@ function AppContent() {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden min-h-screen bg-bg-secondary">
+      <div className="lg:hidden h-full flex flex-col bg-bg-secondary">
         <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
-        <main className="pt-16">
+        <main className="flex-1 overflow-y-auto pt-16">
           {renderCurrentScreen()}
         </main>
       </div>

@@ -3,7 +3,7 @@ import { AuthenticatedRequest } from '../middleware/auth';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { db } from '../db';
 import { inviteCodes, inviteRegistrations, accessRequests, emailWhitelist, user } from '../db/schema';
-import { requireAuth, requireAdmin } from '../middleware/auth';
+import { requireAuth } from '../middleware/auth';
 
 const router = Router();
 
@@ -182,8 +182,8 @@ router.post('/check-whitelist', async (req: AuthenticatedRequest, res: Response)
   }
 });
 
-// Create invite code (temporarily not requiring admin for bootstrapping)
-router.post('/admin/codes', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+// Create invite code for parents
+router.post('/codes', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { code, expiresAt, maxUses } = req.body;
     const userId = req.user!.id;
@@ -219,13 +219,14 @@ router.post('/admin/codes', requireAuth, async (req: AuthenticatedRequest, res: 
   }
 });
 
-// Admin endpoints
-router.use(requireAuth); // First authenticate
-router.use(requireAdmin); // Then check admin access
+// Get all invite codes (admin only)
+router.get('/admin/codes', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  try {  
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
 
-// Get all invite codes
-router.get('/admin/codes', async (req: AuthenticatedRequest, res: Response) => {
-  try {
     const codes = await db
       .select({
         id: inviteCodes.id,
@@ -250,8 +251,13 @@ router.get('/admin/codes', async (req: AuthenticatedRequest, res: Response) => {
 });
 
 // Deactivate invite code
-router.patch('/admin/codes/:id/deactivate', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/admin/codes/:id/deactivate', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { id } = req.params;
 
     await db
@@ -267,8 +273,13 @@ router.patch('/admin/codes/:id/deactivate', async (req: AuthenticatedRequest, re
 });
 
 // Get access requests
-router.get('/admin/requests', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/requests', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const requests = await db
       .select()
       .from(accessRequests)
@@ -282,8 +293,13 @@ router.get('/admin/requests', async (req: AuthenticatedRequest, res: Response) =
 });
 
 // Review access request
-router.patch('/admin/requests/:id', async (req: AuthenticatedRequest, res: Response) => {
+router.patch('/admin/requests/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { id } = req.params;
     const { status } = req.body;
     const reviewerId = req.user!.id;
@@ -332,8 +348,13 @@ router.patch('/admin/requests/:id', async (req: AuthenticatedRequest, res: Respo
 });
 
 // Get whitelist
-router.get('/admin/whitelist', async (req: AuthenticatedRequest, res: Response) => {
+router.get('/admin/whitelist', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const whitelist = await db
       .select({
         id: emailWhitelist.id,
@@ -354,8 +375,13 @@ router.get('/admin/whitelist', async (req: AuthenticatedRequest, res: Response) 
 });
 
 // Add to whitelist
-router.post('/admin/whitelist', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/admin/whitelist', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { email } = req.body;
     const userId = req.user!.id;
 
@@ -389,8 +415,13 @@ router.post('/admin/whitelist', async (req: AuthenticatedRequest, res: Response)
 });
 
 // Remove from whitelist
-router.delete('/admin/whitelist/:id', async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/admin/whitelist/:id', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
     const { id } = req.params;
 
     await db

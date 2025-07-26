@@ -14,6 +14,7 @@ export function AdminScreen() {
   const [workouts, setWorkouts] = useState<WorkoutWithUser[]>([])
   const [profiles, setProfiles] = useState<User[]>([])
   const [parentChildRelations, setParentChildRelations] = useState<{parent: User, child: User | null}[]>([])
+  const [parentChildRelationships, setParentChildRelationships] = useState<any[]>([])
   const [teams, setTeams] = useState<TeamWithMemberCount[]>([])
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<TeamMember[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
@@ -24,6 +25,9 @@ export function AdminScreen() {
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDescription, setNewTeamDescription] = useState('')
+  const [showAddRelationship, setShowAddRelationship] = useState(false)
+  const [selectedParent, setSelectedParent] = useState('')
+  const [selectedChild, setSelectedChild] = useState('')
   const fetchingData = useRef(false)
 
   // Check if user is admin
@@ -46,6 +50,10 @@ export function AdminScreen() {
       const { data: relationData, error: relationError } = await api.getParentChildRelations()
       if (relationError) throw new Error(relationError)
 
+      // Fetch new multi-child relationships
+      const { data: relationshipData, error: relationshipError } = await api.getParentChildRelationships()
+      if (relationshipError) throw new Error(relationshipError)
+
       // Fetch teams
       const { data: teamData, error: teamError } = await api.getAllTeamsAdmin()
       if (teamError) throw new Error(teamError)
@@ -53,6 +61,7 @@ export function AdminScreen() {
       setWorkouts(workoutData || [])
       setProfiles(profileData || [])
       setParentChildRelations(relationData || [])
+      setParentChildRelationships(relationshipData || [])
       setTeams(teamData || [])
     } catch (error: unknown) {
       toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
@@ -80,6 +89,16 @@ export function AdminScreen() {
       setParentChildRelations(relationData || [])
     } catch (error) {
       console.error('Error refreshing relations:', error)
+    }
+  }, [])
+
+  const refreshRelationships = useCallback(async () => {
+    try {
+      const { data: relationshipData, error: relationshipError } = await api.getParentChildRelationships()
+      if (relationshipError) throw new Error(relationshipError)
+      setParentChildRelationships(relationshipData || [])
+    } catch (error) {
+      console.error('Error refreshing relationships:', error)
     }
   }, [])
 
@@ -172,6 +191,42 @@ export function AdminScreen() {
       setSelectedTeam(teamId)
     } catch (error: unknown) {
       toast.error('Error loading team members: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const addParentChildRelationship = async () => {
+    if (!selectedParent || !selectedChild) {
+      toast.error('Please select both parent and child')
+      return
+    }
+
+    try {
+      const { error } = await api.addParentChildRelationship(selectedParent, selectedChild)
+      if (error) throw new Error(error)
+
+      toast.success('Parent-child relationship added!')
+      setShowAddRelationship(false)
+      setSelectedParent('')
+      setSelectedChild('')
+      refreshRelationships()
+    } catch (error: unknown) {
+      toast.error('Error adding relationship: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const removeParentChildRelationship = async (relationId: string) => {
+    if (!confirm('Are you sure you want to remove this parent-child relationship?')) {
+      return
+    }
+
+    try {
+      const { error } = await api.removeParentChildRelationship(relationId)
+      if (error) throw new Error(error)
+
+      toast.success('Relationship removed!')
+      refreshRelationships()
+    } catch (error: unknown) {
+      toast.error('Error removing relationship: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -518,93 +573,232 @@ export function AdminScreen() {
         </div>
       ) : currentTab === 'relations' ? (
         /* Parent-Child Relations */
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-          <div className="p-4 border-b border-gray-200">
-            <h3 className="text-lg font-semibold font-heading text-gray-900">Parent-Child Assignments</h3>
-            <p className="text-sm font-body text-gray-600">Manage which children parents are tracking</p>
-          </div>
-          
-          {parentChildRelations.length === 0 ? (
-            <div className="p-8 text-center">
-              <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-              <p className="font-body text-gray-500">No parent accounts found</p>
+        <div className="space-y-6">
+          {/* Parent-Child Relations Management */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold font-heading text-gray-900">Parent-Child Relationships</h3>
+              <p className="text-sm font-body text-gray-600">Manage parent-child relationships (parents can have multiple children)</p>
             </div>
-          ) : (
-            <div className="divide-y divide-gray-100">
-              {parentChildRelations.map((relation, index) => (
-                <div
-                  key={relation.parent.id}
-                  className="p-4"
+            {/* Add Relationship Section */}
+            <div className="p-4 border-b border-gray-200 bg-gray-50">
+              <div className="flex items-center justify-between mb-4">
+                <h4 className="text-md font-medium font-heading text-gray-900">Add Parent-Child Relationship</h4>
+                <button
+                  onClick={() => setShowAddRelationship(!showAddRelationship)}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      {/* Parent Info */}
-                      {relation.parent.avatarUrl ? (
-                        <img
-                          src={relation.parent.avatarUrl}
-                          alt="Parent"
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                          {relation.parent.name?.[0]?.toUpperCase() || relation.parent.email[0].toUpperCase()}
-                        </div>
-                      )}
-                      
-                      <div>
-                        <div className="flex items-center gap-2 mb-1 font-body">
-                          <span className="font-semibold font-body text-gray-900">
-                            {relation.parent.name || relation.parent.email.split('@')[0]}
-                          </span>
-                          <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-body">Parent</span>
-                        </div>
-                        <div className="text-sm font-body text-gray-600">
-                          {relation.child ? (
-                            <span className="font-body">Tracking: <strong>{relation.child.name || relation.child.email.split('@')[0]}</strong></span>
-                          ) : (
-                            <span className="text-gray-400 font-body">No child assigned</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                  <Plus className="w-4 h-4" />
+                  Add Relationship
+                </button>
+              </div>
 
-                    {/* Edit Assignment */}
-                    <div className="flex items-center gap-2">
-                      {editingRelation === relation.parent.id ? (
-                        <div className="flex items-center gap-2">
-                          <select
-                            defaultValue={relation.child?.id || ''}
-                            onChange={(e) => updateChildAssignment(relation.parent.id, e.target.value || null)}
-                            className="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-                          >
-                            <option value="">No child</option>
-                            {profiles.filter(p => p.role === 'player').map((player) => (
-                              <option key={player.id} value={player.id}>
-                                {player.name || player.email.split('@')[0]}
-                              </option>
-                            ))}
-                          </select>
-                          <button
-                            onClick={() => setEditingRelation(null)}
-                            className="px-2 py-1 text-gray-500 hover:text-gray-700 text-sm font-body"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => setEditingRelation(relation.parent.id)}
-                          className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
-                      )}
+              {showAddRelationship && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Parent</label>
+                      <select
+                        value={selectedParent}
+                        onChange={(e) => setSelectedParent(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      >
+                        <option value="">Select a parent</option>
+                        {profiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name || profile.email.split('@')[0]} ({profile.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Child</label>
+                      <select
+                        value={selectedChild}
+                        onChange={(e) => setSelectedChild(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      >
+                        <option value="">Select a child</option>
+                        {profiles.filter(p => p.role === 'player').map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name || profile.email.split('@')[0]} ({profile.email})
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={addParentChildRelationship}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                    >
+                      Add Relationship
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowAddRelationship(false)
+                        setSelectedParent('')
+                        setSelectedChild('')
+                      }}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-body"
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
-              ))}
+              )}
             </div>
-          )}
+
+            {/* Current Relationships */}
+            <div className="p-4">
+              {parentChildRelationships.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="font-body text-gray-500">No parent-child relationships yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {parentChildRelationships.map((relationship) => (
+                    <div key={relationship.parentId} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex items-center gap-4 mb-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                          {relationship.parentName?.[0]?.toUpperCase() || relationship.parentEmail[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold font-body text-gray-900">
+                              {relationship.parentName || relationship.parentEmail.split('@')[0]}
+                            </span>
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-body">Parent</span>
+                          </div>
+                          <div className="text-sm font-body text-gray-600">{relationship.parentEmail}</div>
+                        </div>
+                      </div>
+
+                      {relationship.children.length === 0 ? (
+                        <div className="text-sm font-body text-gray-500 ml-14">No children assigned</div>
+                      ) : (
+                        <div className="ml-14 space-y-2">
+                          <div className="text-sm font-medium font-body text-gray-700">Children:</div>
+                          {relationship.children.map((child: any) => (
+                            <div key={child.id} className="flex items-center justify-between bg-gray-50 rounded-lg p-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+                                  {child.childName?.[0]?.toUpperCase() || child.childEmail[0].toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-medium font-body text-gray-900">
+                                    {child.childName || child.childEmail.split('@')[0]}
+                                  </div>
+                                  <div className="text-sm font-body text-gray-600">{child.childEmail}</div>
+                                </div>
+                              </div>
+                              <button
+                                onClick={() => removeParentChildRelationship(child.id)}
+                                className="text-red-500 hover:text-red-700 transition-colors"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Legacy Parent-Child Relations (for transition) */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold font-heading text-gray-900">Legacy Parent-Child Assignments</h3>
+              <p className="text-sm font-body text-gray-600">Old single-child assignments (will be migrated)</p>
+            </div>
+            
+            {parentChildRelations.length === 0 ? (
+              <div className="p-8 text-center">
+                <Users className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                <p className="font-body text-gray-500">No legacy parent accounts found</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100">
+                {parentChildRelations.map((relation, index) => (
+                  <div
+                    key={relation.parent.id}
+                    className="p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        {/* Parent Info */}
+                        {relation.parent.avatarUrl ? (
+                          <img
+                            src={relation.parent.avatarUrl}
+                            alt="Parent"
+                            className="w-10 h-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center text-white font-bold">
+                            {relation.parent.name?.[0]?.toUpperCase() || relation.parent.email[0].toUpperCase()}
+                          </div>
+                        )}
+                        
+                        <div>
+                          <div className="flex items-center gap-2 mb-1 font-body">
+                            <span className="font-semibold font-body text-gray-900">
+                              {relation.parent.name || relation.parent.email.split('@')[0]}
+                            </span>
+                            <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-body">Parent</span>
+                          </div>
+                          <div className="text-sm font-body text-gray-600">
+                            {relation.child ? (
+                              <span className="font-body">Tracking: <strong>{relation.child.name || relation.child.email.split('@')[0]}</strong></span>
+                            ) : (
+                              <span className="text-gray-400 font-body">No child assigned</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Edit Assignment */}
+                      <div className="flex items-center gap-2">
+                        {editingRelation === relation.parent.id ? (
+                          <div className="flex items-center gap-2">
+                            <select
+                              defaultValue={relation.child?.id || ''}
+                              onChange={(e) => updateChildAssignment(relation.parent.id, e.target.value || null)}
+                              className="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
+                            >
+                              <option value="">No child</option>
+                              {profiles.filter(p => p.role === 'player').map((player) => (
+                                <option key={player.id} value={player.id}>
+                                  {player.name || player.email.split('@')[0]}
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => setEditingRelation(null)}
+                              className="px-2 py-1 text-gray-500 hover:text-gray-700 text-sm font-body"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setEditingRelation(relation.parent.id)}
+                            className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <>
