@@ -81,7 +81,7 @@ export function InviteSignUpScreen({ inviteCode, onSignUpComplete }: InviteSignU
         },
         body: JSON.stringify({
           provider: 'google',
-          callbackURL: window.location.origin + '?callback=auth&signup=true'
+          callbackURL: window.location.origin + `?callback=auth&signup=true&invite=${inviteCode}`
         }),
         credentials: 'include'
       })

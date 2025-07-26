@@ -99,7 +99,7 @@ export function AuthScreen() {
 
           <div className="text-center">
             <p className="text-xs text-gray-500 font-body">
-              Secure authentication with Google - no passwords needed!
+              Don't have an account? You need an invite link to sign up.
             </p>
           </div>
         </div>
@@ -172,7 +172,7 @@ export function AuthScreen() {
 
             <div className="text-center">
               <p className="text-xs text-gray-500 font-body">
-                Secure authentication with Google - no passwords needed!
+                Don't have an account? You need an invite link to sign up.
               </p>
             </div>
           </div>

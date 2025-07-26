@@ -298,6 +298,13 @@ class ApiClient {
       body: JSON.stringify({ inviteCodeId }),
     });
   }
+
+  // User verification endpoints  
+  async approveUser(userId: string) {
+    return this.request(`/profiles/admin/approve/${userId}`, {
+      method: 'PATCH',
+    });
+  }
 }
 
 // Export singleton instance

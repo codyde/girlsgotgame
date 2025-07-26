@@ -18,23 +18,28 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
   const isAdmin = user?.email === 'codydearkland@gmail.com'
   const isParentWithChild = user?.role === 'parent' && user?.childId
   const isParent = profile?.role === 'parent'
-  const canCreateInvites = isAdmin || isParent
+  const isVerified = profile?.isVerified === true
+  const canCreateInvites = isVerified && (isAdmin || isParent)
 
-  const tabs = [
+  // For unverified users, show feed and profile tabs only
+  const tabs = isVerified ? [
     { id: 'feed', label: 'Feed', icon: Home },
     { id: 'training', label: 'Training', icon: Trophy },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
     { id: 'leaderboard', label: 'Team', icon: Users },
     { id: 'profile', label: 'Profile', icon: UserIcon },
+  ] : [
+    { id: 'feed', label: 'Feed', icon: Home },
+    { id: 'profile', label: 'Profile', icon: UserIcon },
   ]
 
-  // Add parent dashboard tab for parents with assigned children
-  if (isParentWithChild) {
+  // Add parent dashboard tab for verified parents with assigned children
+  if (isVerified && isParentWithChild) {
     tabs.splice(1, 0, { id: 'parent-dashboard', label: 'Dashboard', icon: Shield })
   }
 
-  // Add admin tab for admin users
-  if (isAdmin) {
+  // Add admin tab for verified admin users
+  if (isVerified && isAdmin) {
     tabs.push({ id: 'admin', label: 'Admin', icon: Shield })
   }
 

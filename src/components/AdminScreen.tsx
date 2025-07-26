@@ -20,7 +20,7 @@ export function AdminScreen() {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams'>('workouts')
+  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'unverified'>('workouts')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
@@ -269,6 +269,22 @@ export function AdminScreen() {
     })
   }
 
+  const approveUser = async (userId: string, userName: string) => {
+    if (!confirm(`Approve ${userName} to access the full application?`)) {
+      return
+    }
+
+    try {
+      const { error } = await api.approveUser(userId)
+      if (error) throw new Error(error)
+      
+      toast.success(`${userName} has been approved!`)
+      fetchData() // Refresh the data to update the UI
+    } catch (error: unknown) {
+      toast.error('Error approving user: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const filteredWorkouts = selectedUser === 'all' 
     ? workouts 
     : workouts.filter(w => w.user_id === selectedUser)
@@ -378,6 +394,16 @@ export function AdminScreen() {
             }`}
           >
             Parent-Child Relations
+          </button>
+          <button
+            onClick={() => setCurrentTab('unverified')}
+            className={`px-6 py-3 font-medium font-body transition-colors ${
+              currentTab === 'unverified'
+                ? 'text-primary-600 border-b-2 border-primary-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Unverified Users
           </button>
         </div>
       </div>
@@ -799,6 +825,67 @@ export function AdminScreen() {
               </div>
             )}
           </div>
+        </div>
+      ) : currentTab === 'unverified' ? (
+        /* Unverified Users Management */
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold font-heading text-gray-900">Unverified Users</h3>
+            <p className="text-sm font-body text-gray-600">Users who have signed up but haven't been verified yet</p>
+          </div>
+          
+          {profiles.filter(p => !p.isVerified).length === 0 ? (
+            <div className="p-8 text-center">
+              <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="font-body text-gray-500">All users are verified</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {profiles.filter(p => !p.isVerified).map((unverifiedUser) => (
+                <div key={unverifiedUser.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      {/* User Avatar */}
+                      {unverifiedUser.avatarUrl ? (
+                        <img
+                          src={unverifiedUser.avatarUrl}
+                          alt="Profile"
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+                          {(unverifiedUser.name || unverifiedUser.email)?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      
+                      {/* User Info */}
+                      <div>
+                        <div className="font-semibold font-body text-gray-900">
+                          {unverifiedUser.name || unverifiedUser.email.split('@')[0]}
+                        </div>
+                        <div className="text-sm font-body text-gray-500">{unverifiedUser.email}</div>
+                        <div className="flex items-center gap-2 text-sm font-body text-gray-600">
+                          <span className="capitalize">{unverifiedUser.role}</span>
+                          <span>•</span>
+                          <span>{unverifiedUser.totalPoints || 0} points</span>
+                          <span>•</span>
+                          <span>Joined {new Date(unverifiedUser.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Approve Button */}
+                    <button
+                      onClick={() => approveUser(unverifiedUser.id, unverifiedUser.name || unverifiedUser.email)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-body"
+                    >
+                      Approve
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <>

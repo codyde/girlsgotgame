@@ -543,6 +543,42 @@ export function FeedScreen() {
     )
   }
 
+  // Show verification pending message for unverified users
+  if (!profile?.isVerified) {
+    return (
+      <div className="h-full flex flex-col bg-bg-secondary">
+        {/* Fixed Header */}
+        <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0 z-40">
+          <div className="max-w-2xl lg:mx-auto">
+            <div className="flex items-center gap-3 mb-2">
+              <Home className="w-8 h-8 text-primary-600" />
+              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Feed</h1>
+            </div>
+            <p className="font-body text-text-secondary">Connect with your team and share your progress</p>
+          </div>
+        </div>
+
+        {/* Verification Pending Message */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md text-center">
+            <div className="w-20 h-20 mx-auto mb-6 bg-orange-100 rounded-full flex items-center justify-center">
+              <Clock className="w-10 h-10 text-orange-600" />
+            </div>
+            <h2 className="text-2xl font-bold font-heading text-gray-900 mb-4">Account Pending Verification</h2>
+            <p className="text-gray-600 font-body mb-6 leading-relaxed">
+              Your account is pending verification. You will have limited access until an admin approves your access.
+            </p>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-sm text-orange-700 font-body">
+                <strong>What's next?</strong> An admin will review your account soon. Once approved, you'll have full access to post, comment, and see all team activity.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Fixed Header */}
