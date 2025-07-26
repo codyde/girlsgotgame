@@ -1,0 +1,1545 @@
+openapi: 3.0.3
+info:
+  title: Girls Got Game API
+  description: Basketball training application API for mobile and web clients
+  version: 1.0.0
+  contact:
+    name: Girls Got Game API Support
+    email: support@girlsgotgame.app
+servers:
+  - url: http://localhost:3001/api
+    description: Development server
+  - url: https://api.girlsgotgame.app/api
+    description: Production server
+
+security:
+  - cookieAuth: []
+
+paths:
+  # Authentication Endpoints
+  /auth/sign-in/social:
+    post:
+      tags:
+        - Authentication
+      summary: Initiate OAuth sign-in
+      description: Start the OAuth flow with Google. Returns a redirect URL for the client to navigate to.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider:
+                  type: string
+                  enum: [google]
+                  example: google
+                callbackURL:
+                  type: string
+                  format: uri
+                  example: "http://localhost:5173/?callback=auth"
+                  description: URL to redirect to after OAuth completion
+              required:
+                - provider
+                - callbackURL
+      responses:
+        '200':
+          description: OAuth URL generated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url:
+                    type: string
+                    format: uri
+                    description: Google OAuth URL to redirect user to
+                    example: "https://accounts.google.com/oauth/authorize?..."
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/callback/google:
+    get:
+      tags:
+        - Authentication
+      summary: OAuth callback endpoint
+      description: |
+        Handles the OAuth callback from Google. This endpoint is called automatically by Google after user authorization.
+        Users should not call this endpoint directly.
+      parameters:
+        - name: code
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Authorization code from Google
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: State parameter for CSRF protection
+      responses:
+        '302':
+          description: Redirect to application with session established
+        '400':
+          description: Invalid authorization code or state
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /me:
+    get:
+      tags:
+        - Authentication
+      summary: Get current session
+      description: Retrieve the current user session information
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Session information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/AuthUser'
+                  session:
+                    $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/sign-out:
+    post:
+      tags:
+        - Authentication
+      summary: Sign out current user
+      description: Invalidate the current user session
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Successfully signed out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # User existence check endpoint
+  /check-user:
+    post:
+      tags:
+        - Authentication
+      summary: Check if user exists
+      description: Check if a user exists by email (used before OAuth to determine signup vs login flow)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: "user@example.com"
+              required:
+                - email
+      responses:
+        '200':
+          description: User existence check completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exists:
+                    type: boolean
+                    description: Whether the user exists in the database
+                  userId:
+                    type: string
+                    description: User ID if user exists
+                    nullable: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Profile Endpoints
+  /profiles/me:
+    get:
+      tags:
+        - Profiles
+      summary: Get current user profile
+      description: Retrieve the profile information for the authenticated user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags:
+        - Profiles
+      summary: Update current user profile
+      description: Update the profile information for the authenticated user
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfile'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles:
+    post:
+      tags:
+        - Profiles
+      summary: Create or update profile
+      description: Create or update user profile during onboarding
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfile'
+      responses:
+        '201':
+          description: Profile created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles/leaderboard:
+    get:
+      tags:
+        - Profiles
+      summary: Get leaderboard
+      description: Retrieve the top players by points
+      responses:
+        '200':
+          description: Leaderboard retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LeaderboardEntry'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles/{id}:
+    get:
+      tags:
+        - Profiles
+      summary: Get profile by ID
+      description: Retrieve public profile information for a specific user
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicProfile'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /profiles/players:
+    get:
+      tags:
+        - Profiles
+      summary: Get all player profiles
+      description: Retrieve all players for parent dashboard
+      responses:
+        '200':
+          description: Players retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PublicProfile'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Workout Endpoints
+  /workouts:
+    get:
+      tags:
+        - Workouts
+      summary: Get user workouts
+      description: Retrieve workouts for the authenticated user
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Workouts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Workout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Workouts
+      summary: Create workout
+      description: Create a new workout entry
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkout'
+      responses:
+        '201':
+          description: Workout created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workout'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /workouts/{id}:
+    get:
+      tags:
+        - Workouts
+      summary: Get workout by ID
+      description: Retrieve a specific workout by ID
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Workout retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workout'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Workouts
+      summary: Delete workout
+      description: Delete a workout entry
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Workout deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /workouts/stats/summary:
+    get:
+      tags:
+        - Workouts
+      summary: Get workout statistics
+      description: Retrieve workout statistics for the authenticated user
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkoutStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Posts Endpoints
+  /posts/feed:
+    get:
+      tags:
+        - Posts
+      summary: Get feed posts
+      description: Retrieve posts for the social feed
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        '200':
+          description: Feed posts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PostWithRelations'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /posts:
+    post:
+      tags:
+        - Posts
+      summary: Create post
+      description: Create a new social media post
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePost'
+      responses:
+        '201':
+          description: Post created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostWithRelations'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /posts/{id}:
+    patch:
+      tags:
+        - Posts
+      summary: Update post
+      description: Update an existing post
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePost'
+      responses:
+        '200':
+          description: Post updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Post'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Posts
+      summary: Delete post
+      description: Delete a post
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Post deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /posts/{id}/like:
+    post:
+      tags:
+        - Posts
+      summary: Toggle like on post
+      description: Like or unlike a post
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Like status toggled successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  liked:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /posts/{id}/comments:
+    get:
+      tags:
+        - Posts
+      summary: Get post comments
+      description: Retrieve comments for a specific post
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Comments retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CommentWithUser'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Posts
+      summary: Add comment to post
+      description: Create a new comment on a post
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateComment'
+      responses:
+        '201':
+          description: Comment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentWithUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Upload Endpoints
+  /upload/single:
+    post:
+      tags:
+        - Upload
+      summary: Upload single file
+      description: Upload a single file to cloud storage
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /upload/avatar:
+    post:
+      tags:
+        - Upload
+      summary: Upload avatar
+      description: Upload an avatar image (16MB limit)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Avatar uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /upload/media:
+    post:
+      tags:
+        - Upload
+      summary: Upload media
+      description: Upload media for feed posts (128MB limit)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Media uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Chat Endpoints
+  /chat/teams:
+    get:
+      tags:
+        - Chat
+      summary: Get user teams
+      description: Retrieve teams the user is a member of
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Teams retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Chat
+      summary: Create team
+      description: Create a new team
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTeam'
+      responses:
+        '201':
+          description: Team created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /chat/teams/{teamId}/messages:
+    get:
+      tags:
+        - Chat
+      summary: Get team messages
+      description: Retrieve messages for a specific team
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /chat/messages/dm/{otherUserId}:
+    get:
+      tags:
+        - Chat
+      summary: Get DM history
+      description: Retrieve direct message history with another user
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: otherUserId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Messages retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /chat/conversations:
+    get:
+      tags:
+        - Chat
+      summary: Get DM conversations
+      description: Retrieve list of DM conversations with last message preview
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Conversations retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DMConversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /chat/users/search:
+    get:
+      tags:
+        - Chat
+      summary: Search users
+      description: Search for users to start DM conversations
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+      responses:
+        '200':
+          description: Users found successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SearchUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Invite Endpoints
+  /invites/validate:
+    post:
+      tags:
+        - Invites
+      summary: Validate invite code
+      description: Check if an invite code is valid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+              required:
+                - code
+      responses:
+        '200':
+          description: Invite code validated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  inviteCodeId:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /invites/use:
+    post:
+      tags:
+        - Invites
+      summary: Use invite code
+      description: Use an invite code after successful OAuth
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inviteCodeId:
+                  type: string
+                  format: uuid
+              required:
+                - inviteCodeId
+      responses:
+        '200':
+          description: Invite code used successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  updatedProfile:
+                    $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: session
+
+  schemas:
+    AuthUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          nullable: true
+
+    Session:
+      type: object
+      properties:
+        id:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        token:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        userId:
+          type: string
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+        emailVerified:
+          type: boolean
+        image:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        totalPoints:
+          type: integer
+          minimum: 0
+        role:
+          type: string
+          enum: [player, parent]
+        childId:
+          type: string
+          nullable: true
+        isOnboarded:
+          type: boolean
+        isVerified:
+          type: boolean
+        jerseyNumber:
+          type: integer
+          minimum: 1
+          maximum: 99
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateProfile:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [player, parent]
+          default: player
+        childId:
+          type: string
+          format: uuid
+        jerseyNumber:
+          type: integer
+          minimum: 1
+          maximum: 99
+        isOnboarded:
+          type: boolean
+          default: false
+        totalPoints:
+          type: integer
+          minimum: 0
+          default: 0
+
+    UpdateProfile:
+      type: object
+      properties:
+        name:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [player, parent]
+        childId:
+          type: string
+          format: uuid
+        isOnboarded:
+          type: boolean
+        jerseyNumber:
+          type: integer
+          minimum: 1
+          maximum: 99
+
+    PublicProfile:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+        totalPoints:
+          type: integer
+        jerseyNumber:
+          type: integer
+          nullable: true
+        role:
+          type: string
+          enum: [player, parent]
+        createdAt:
+          type: string
+          format: date-time
+
+    LeaderboardEntry:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          nullable: true
+        totalPoints:
+          type: integer
+        jerseyNumber:
+          type: integer
+          nullable: true
+        avatarUrl:
+          type: string
+          nullable: true
+
+    Workout:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        exerciseType:
+          type: string
+          enum: [dribbling, shooting, conditioning]
+        pointsEarned:
+          type: integer
+          minimum: 0
+        durationMinutes:
+          type: integer
+          minimum: 1
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateWorkout:
+      type: object
+      required:
+        - exerciseType
+        - pointsEarned
+        - durationMinutes
+      properties:
+        exerciseType:
+          type: string
+          enum: [dribbling, shooting, conditioning]
+        pointsEarned:
+          type: integer
+          minimum: 0
+        durationMinutes:
+          type: integer
+          minimum: 1
+        notes:
+          type: string
+
+    WorkoutStats:
+      type: object
+      properties:
+        totalWorkouts:
+          type: integer
+        totalPoints:
+          type: integer
+        totalMinutes:
+          type: integer
+        byType:
+          type: object
+          properties:
+            dribbling:
+              type: integer
+            shooting:
+              type: integer
+            conditioning:
+              type: integer
+
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        content:
+          type: string
+        imageUrl:
+          type: string
+          nullable: true
+        workoutId:
+          type: string
+          format: uuid
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    PostWithRelations:
+      allOf:
+        - $ref: '#/components/schemas/Post'
+        - type: object
+          properties:
+            user:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                  nullable: true
+                avatarUrl:
+                  type: string
+                  nullable: true
+                jerseyNumber:
+                  type: integer
+                  nullable: true
+            workout:
+              $ref: '#/components/schemas/Workout'
+            likes:
+              type: array
+              items:
+                type: object
+                properties:
+                  userId:
+                    type: string
+            comments:
+              type: array
+              items:
+                $ref: '#/components/schemas/CommentWithUser'
+            likesCount:
+              type: integer
+            commentsCount:
+              type: integer
+            userHasLiked:
+              type: boolean
+
+    CreatePost:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+        imageUrl:
+          type: string
+          format: uri
+        workoutId:
+          type: string
+          format: uuid
+
+    UpdatePost:
+      type: object
+      properties:
+        content:
+          type: string
+          minLength: 1
+        imageUrl:
+          type: string
+          format: uri
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        postId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    CommentWithUser:
+      allOf:
+        - $ref: '#/components/schemas/Comment'
+        - type: object
+          properties:
+            user:
+              type: object
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                  nullable: true
+                avatarUrl:
+                  type: string
+                  nullable: true
+
+    CreateComment:
+      type: object
+      required:
+        - content
+      properties:
+        content:
+          type: string
+          minLength: 1
+
+    FileUpload:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+        name:
+          type: string
+        size:
+          type: integer
+        type:
+          type: string
+
+    Team:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        role:
+          type: string
+          enum: [admin, member]
+
+    CreateTeam:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        content:
+          type: string
+        messageType:
+          type: string
+          enum: [text, image, system]
+        createdAt:
+          type: string
+          format: date-time
+        senderId:
+          type: string
+        senderName:
+          type: string
+        senderAvatar:
+          type: string
+          nullable: true
+        teamId:
+          type: string
+          format: uuid
+          nullable: true
+        recipientId:
+          type: string
+          nullable: true
+
+    DMConversation:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+        lastMessageContent:
+          type: string
+        lastMessageSenderName:
+          type: string
+        lastMessageTime:
+          type: string
+          format: date-time
+
+    SearchUser:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        avatarUrl:
+          type: string
+          nullable: true
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error message
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Invalid data provided
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Authentication required
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Insufficient permissions
+
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Resource not found
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: Internal server error
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Profiles
+    description: User profile management
+  - name: Workouts
+    description: Exercise and workout tracking
+  - name: Posts
+    description: Social media posts and interactions
+  - name: Upload
+    description: File upload functionality
+  - name: Chat
+    description: Team and direct messaging
+  - name: Invites
+    description: Invite system for user onboarding

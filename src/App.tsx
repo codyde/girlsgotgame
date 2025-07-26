@@ -12,7 +12,7 @@ import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
 import { TrainingScreen } from './components/TrainingScreen'
 import { TeamChatScreen } from './components/TeamChatScreen'
-import { LeaderboardScreen } from './components/LeaderboardScreen'
+import { TeamScreen } from './components/TeamScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AdminScreen } from './components/AdminScreen'
 import { Navigation } from './components/Navigation'
@@ -95,8 +95,8 @@ function AppContent() {
         return <TrainingScreen />
       case 'chat':
         return <TeamChatScreen />
-      case 'leaderboard':
-        return <LeaderboardScreen />
+      case 'team':
+        return <TeamScreen />
       case 'profile':
         return <ProfileScreen />
       case 'admin':

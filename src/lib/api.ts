@@ -242,6 +242,11 @@ class ApiClient {
     });
   }
 
+  // Team endpoints
+  async getUserTeams() {
+    return this.request('/chat/teams');
+  }
+
   // Team management endpoints (admin only)
   async getAllTeamsAdmin() {
     return this.request('/chat/admin/teams');

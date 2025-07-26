@@ -26,7 +26,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
     { id: 'feed', label: 'Feed', icon: Home },
     { id: 'training', label: 'Training', icon: Trophy },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
-    { id: 'leaderboard', label: 'Team', icon: Users },
+    { id: 'team', label: 'Team', icon: Users },
     { id: 'profile', label: 'Profile', icon: UserIcon },
   ] : [
     { id: 'feed', label: 'Feed', icon: Home },

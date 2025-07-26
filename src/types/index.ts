@@ -93,6 +93,7 @@ export interface TeamMember {
   userName: string
   userEmail: string
   userAvatar: string | null
+  userRole: 'parent' | 'player'
 }
 
 export interface TeamWithMemberCount extends Team {

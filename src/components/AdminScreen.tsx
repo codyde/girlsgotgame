@@ -278,8 +278,16 @@ export function AdminScreen() {
       const { error } = await api.approveUser(userId)
       if (error) throw new Error(error)
       
-      toast.success(`${userName} has been approved!`)
-      fetchData() // Refresh the data to update the UI
+      // Update local state to mark user as verified instead of full data refresh
+      setProfiles(prevProfiles => 
+        prevProfiles.map(profile => 
+          profile.id === userId 
+            ? { ...profile, isVerified: true }
+            : profile
+        )
+      )
+      
+      toast.success(`${userName} has been approved and can now access the full application!`)
     } catch (error: unknown) {
       toast.error('Error approving user: ' + (error instanceof Error ? error.message : String(error)))
     }
