@@ -116,6 +116,48 @@ export const appLogger = {
       logger.warn("Database connection issue", { error, component: "database" })
   },
 
+  // Invite system logs
+  invite: {
+    linkClicked: (inviteCode: string) => 
+      logger.info("Invite link clicked", { inviteCode, component: "invite" }),
+    
+    validationStart: (inviteCode: string) => 
+      logger.debug("Starting invite code validation", { inviteCode, component: "invite" }),
+    
+    validationSuccess: (inviteCode: string, inviteCodeId: string) => 
+      logger.info("Invite code validation successful", { inviteCode, inviteCodeId, component: "invite" }),
+    
+    validationError: (inviteCode: string, error: string) => 
+      logger.error("Invite code validation failed", { inviteCode, error, component: "invite" }),
+    
+    oauthStart: (inviteCodeId: string) => 
+      logger.info("Starting OAuth flow with invite", { inviteCodeId, component: "invite" }),
+    
+    oauthRedirect: (inviteCodeId: string, oauthUrl: string) => 
+      logger.debug("Redirecting to OAuth provider", { inviteCodeId, oauthUrl, component: "invite" }),
+    
+    oauthError: (inviteCodeId: string, error: string) => 
+      logger.error("OAuth flow failed for invite", { inviteCodeId, error, component: "invite" }),
+    
+    callbackReceived: (inviteCodeId: string, userId?: string) => 
+      logger.info("OAuth callback received", { inviteCodeId, userId, component: "invite" }),
+    
+    usageStart: (inviteCodeId: string, userId: string) => 
+      logger.debug("Starting invite code usage", { inviteCodeId, userId, component: "invite" }),
+    
+    usageSuccess: (inviteCodeId: string, userId: string) => 
+      logger.info("Invite code used successfully", { inviteCodeId, userId, component: "invite" }),
+    
+    usageError: (inviteCodeId: string, userId: string, error: string) => 
+      logger.error("Failed to use invite code", { inviteCodeId, userId, error, component: "invite" }),
+    
+    signupComplete: (inviteCodeId: string, userId: string, email: string) => 
+      logger.info("Invite signup flow completed", { inviteCodeId, userId, email, component: "invite" }),
+    
+    linkGenerated: (inviteCode: string, createdBy: string) => 
+      logger.info("Invite link generated", { inviteCode, createdBy, component: "invite" })
+  },
+
   // General error logging
   error: {
     unexpected: (error: string, context: string) => 

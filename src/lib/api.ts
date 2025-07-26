@@ -224,6 +224,29 @@ class ApiClient {
     });
   }
 
+  // New multi-child relationship endpoints
+  async getParentChildRelationships() {
+    return this.request('/profiles/admin/parent-child-relationships');
+  }
+
+  async addParentChildRelationship(parentId: string, childId: string) {
+    return this.request('/profiles/admin/parent-child-relationships', {
+      method: 'POST',
+      body: JSON.stringify({ parentId, childId }),
+    });
+  }
+
+  async removeParentChildRelationship(relationId: string) {
+    return this.request(`/profiles/admin/parent-child-relationships/${relationId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Team endpoints
+  async getUserTeams() {
+    return this.request('/chat/teams');
+  }
+
   // Team management endpoints (admin only)
   async getAllTeamsAdmin() {
     return this.request('/chat/admin/teams');
@@ -256,6 +279,35 @@ class ApiClient {
     return this.request('/chat/teams', {
       method: 'POST',
       body: JSON.stringify({ name, description }),
+    });
+  }
+
+  // Invite endpoints
+  async createInviteCode(inviteData: { code: string; maxUses?: number; expiresAt?: Date }) {
+    return this.request('/invites/codes', {
+      method: 'POST',
+      body: JSON.stringify(inviteData),
+    });
+  }
+
+  async validateInviteCode(code: string) {
+    return this.request('/invites/validate', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async useInviteCode(inviteCodeId: string) {
+    return this.request('/invites/use', {
+      method: 'POST',
+      body: JSON.stringify({ inviteCodeId }),
+    });
+  }
+
+  // User verification endpoints  
+  async approveUser(userId: string) {
+    return this.request(`/profiles/admin/approve/${userId}`, {
+      method: 'PATCH',
     });
   }
 }

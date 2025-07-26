@@ -9,6 +9,7 @@ export interface User {
   role: 'parent' | 'player'
   childId: string | null
   isOnboarded: boolean
+  isVerified: boolean
   jerseyNumber: number | null
   createdAt: string
   updatedAt: string
@@ -92,6 +93,7 @@ export interface TeamMember {
   userName: string
   userEmail: string
   userAvatar: string | null
+  userRole: 'parent' | 'player'
 }
 
 export interface TeamWithMemberCount extends Team {

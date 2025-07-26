@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/node";
 import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
+import { eq, and } from 'drizzle-orm';
 
 // Import the schema for Better Auth
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -60,6 +61,58 @@ export const auth: any = betterAuth({
       : ["http://localhost:5173", "http://localhost:5174"],
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
+      // Auto-verify users who sign up through invite links
+      if (ctx.path.includes("/callback/") && ctx.context.newSession) {
+        const { logger } = Sentry;
+        const newSession = ctx.context.newSession;
+        
+        if (newSession && newSession.user) {
+          // Check if this is an invite signup by looking for invite code in referrer or callback URL
+          const referrer = ctx.request?.headers?.referer || '';
+          const inviteCode = referrer.includes('invite=') ? 
+            referrer.split('invite=')[1]?.split('&')[0] : null;
+          
+          if (inviteCode) {
+            try {
+              // Validate and mark user as verified if they have a valid invite
+              const [validInvite] = await authDb
+                .select()
+                .from(schema.inviteCodes)
+                .where(
+                  and(
+                    eq(schema.inviteCodes.code, inviteCode),
+                    eq(schema.inviteCodes.isActive, true)
+                  )
+                );
+
+              if (validInvite && (!validInvite.expiresAt || validInvite.expiresAt > new Date())) {
+                // Mark user as verified immediately
+                await authDb
+                  .update(schema.user)
+                  .set({ isVerified: true })
+                  .where(eq(schema.user.id, newSession.user.id));
+                
+                logger.info('Auto-verified user via invite signup', { 
+                  userId: newSession.user.id,
+                  email: newSession.user.email,
+                  inviteCode,
+                  component: 'auth-hook' 
+                });
+              }
+            } catch (error) {
+              logger.error('Error during auto-verification', { 
+                userId: newSession.user.id,
+                email: newSession.user.email,
+                inviteCode,
+                error: error instanceof Error ? error.message : 'Unknown error',
+                component: 'auth-hook' 
+              });
+            }
+          }
+        }
+      }
+      
+      // Log new user registrations to Sentry
       // Log new user registrations to Sentry
       if (ctx.path.startsWith("/sign-up") || ctx.path.includes("/callback/")) {
         const newSession = ctx.context.newSession;

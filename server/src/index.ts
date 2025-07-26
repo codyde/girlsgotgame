@@ -6,6 +6,9 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import path from 'path';
+import swaggerUi from 'swagger-ui-express';
+import yaml from 'yaml';
+import fs from 'fs';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { setSocketIO } from './lib/socket';
@@ -17,6 +20,7 @@ import workoutRoutes from './routes/workouts';
 import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
 import chatRoutes from './routes/chat';
+import inviteRoutes from './routes/invites';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 import { db } from './db/index';
@@ -59,6 +63,61 @@ app.use(morgan('combined'));
 app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
+
+// Swagger API Documentation
+try {
+  const swaggerPath = path.join(__dirname, '../../swagger.yaml');
+  if (fs.existsSync(swaggerPath)) {
+    const swaggerFile = fs.readFileSync(swaggerPath, 'utf8');
+    const swaggerDocument = yaml.parse(swaggerFile);
+    
+    const swaggerOptions = {
+      explorer: true,
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'Girls Got Game API Documentation'
+    };
+    
+    // Set up Swagger UI middleware and routes
+    const swaggerServe = swaggerUi.serve;
+    const swaggerSetup = swaggerUi.setup(swaggerDocument, swaggerOptions);
+    
+    // Serve Swagger UI at /api-docs (primary)
+    app.use('/api-docs', swaggerServe);
+    app.get('/api-docs', swaggerSetup);
+    
+    // Serve Swagger UI at /api for browser requests only
+    app.use('/api', swaggerServe);
+    app.get('/api', (req, res, next) => {
+      // Only serve Swagger UI for browser requests (Accept: text/html)
+      if (req.headers.accept && req.headers.accept.includes('text/html')) {
+        return swaggerSetup(req, res, next);
+      }
+      // For API requests, return a JSON response
+      res.json({
+        message: 'Girls Got Game API',
+        documentation: `${req.protocol}://${req.get('host')}/api-docs`,
+        version: '1.0.0',
+        endpoints: {
+          authentication: '/api/auth/*',
+          profiles: '/api/profiles',
+          workouts: '/api/workouts',
+          posts: '/api/posts',
+          chat: '/api/chat',
+          upload: '/api/upload',
+          invites: '/api/invites'
+        }
+      });
+    });
+    
+    console.log('📚 Swagger UI available at:');
+    console.log('   - /api-docs (primary)');
+    console.log('   - /api (browser requests only)');
+  } else {
+    console.log('⚠️ swagger.yaml not found - Swagger UI not available');
+  }
+} catch (error) {
+  console.error('❌ Error setting up Swagger UI:', error);
+}
 
 // Better Auth handler MUST come before express.json() middleware
 
@@ -302,6 +361,7 @@ const initializeServer = async () => {
   app.use('/api/posts', postRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chat', chatRoutes);
+  app.use('/api/invites', inviteRoutes);
 
   // Error handling middleware
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

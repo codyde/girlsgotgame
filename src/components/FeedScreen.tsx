@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw } from 'lucide-react'
+import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw, ZoomIn } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../hooks/useSocket'
@@ -48,7 +48,15 @@ const isVideoUrl = (url: string): boolean => {
 };
 
 // Component to handle media rendering with content type detection
-const MediaRenderer = ({ url, isOptimisticVideo }: { url: string, isOptimisticVideo?: boolean }) => {
+const MediaRenderer = ({ 
+  url, 
+  isOptimisticVideo, 
+  onImageClick 
+}: { 
+  url: string, 
+  isOptimisticVideo?: boolean,
+  onImageClick?: () => void 
+}) => {
   const [mediaType, setMediaType] = useState<'video' | 'image' | 'unknown'>(
     isOptimisticVideo ? 'video' : isVideoUrl(url) ? 'video' : 'unknown'
   );
@@ -89,16 +97,23 @@ const MediaRenderer = ({ url, isOptimisticVideo }: { url: string, isOptimisticVi
 
   if (mediaType === 'image') {
     return (
-      <img
-        src={url}
-        alt="Post content"
-        className="w-full h-auto max-h-96 object-cover"
-        loading="lazy"
-        style={{ 
-          imageRendering: 'high-quality',
-          colorInterpolation: 'sRGB'
-        }}
-      />
+      <div className="relative group cursor-pointer" onClick={onImageClick}>
+        <img
+          src={url}
+          alt="Post content"
+          className="w-full h-auto object-contain transition-transform duration-200 hover:scale-[1.02]"
+          loading="lazy"
+          style={{ 
+            imageRendering: 'high-quality',
+            colorInterpolation: 'sRGB'
+          }}
+        />
+        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-200 flex items-center justify-center">
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black bg-opacity-50 rounded-full p-2">
+            <ZoomIn className="w-6 h-6 text-white" />
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -125,6 +140,7 @@ export function FeedScreen() {
   const [showComments, setShowComments] = useState<Record<string, boolean>>({})
   const [newComment, setNewComment] = useState<Record<string, string>>({})
   const [refreshing, setRefreshing] = useState(false)
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Helper function to close modal and reset state
@@ -231,6 +247,26 @@ export function FeedScreen() {
       socket.off('post_deleted', handlePostDeleted)
     }
   }, [socket])
+
+  // Handle keyboard events for lightbox
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && lightboxImage) {
+        setLightboxImage(null)
+      }
+    }
+
+    if (lightboxImage) {
+      document.addEventListener('keydown', handleKeyDown)
+      // Prevent body scroll when lightbox is open
+      document.body.style.overflow = 'hidden'
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      document.body.style.overflow = 'unset'
+    }
+  }, [lightboxImage])
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -543,6 +579,42 @@ export function FeedScreen() {
     )
   }
 
+  // Show verification pending message for unverified users
+  if (!profile?.isVerified) {
+    return (
+      <div className="h-full flex flex-col bg-bg-secondary">
+        {/* Fixed Header */}
+        <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0 z-40">
+          <div className="max-w-2xl lg:mx-auto">
+            <div className="flex items-center gap-3 mb-2">
+              <Home className="w-8 h-8 text-primary-600" />
+              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Feed</h1>
+            </div>
+            <p className="font-body text-text-secondary">Connect with your team and share your progress</p>
+          </div>
+        </div>
+
+        {/* Verification Pending Message */}
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="max-w-md text-center">
+            <div className="w-20 h-20 mx-auto mb-6 bg-orange-100 rounded-full flex items-center justify-center">
+              <Clock className="w-10 h-10 text-orange-600" />
+            </div>
+            <h2 className="text-2xl font-bold font-heading text-gray-900 mb-4">Account Pending Verification</h2>
+            <p className="text-gray-600 font-body mb-6 leading-relaxed">
+              Your account is pending verification. You will have limited access until an admin approves your access.
+            </p>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <p className="text-sm text-orange-700 font-body">
+                <strong>What's next?</strong> An admin will review your account soon. Once approved, you'll have full access to post, comment, and see all team activity.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Fixed Header */}
@@ -679,6 +751,38 @@ export function FeedScreen() {
           </div>
         )}
 
+        {/* Lightbox for image viewing */}
+        {lightboxImage && (
+          <div
+            className="fixed inset-0 flex items-center justify-center p-4 z-50 animate-in fade-in duration-300"
+            onClick={() => setLightboxImage(null)}
+            style={{
+              background: 'rgba(0, 0, 0, 0.95)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)'
+            }}
+          >
+            <div className="relative w-full h-full flex items-center justify-center animate-in zoom-in-95 duration-300">
+              <img
+                src={lightboxImage}
+                alt="Enlarged view"
+                className="max-w-[90vw] max-h-[90vh] w-auto h-auto object-contain rounded-lg shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+                style={{ 
+                  imageRendering: 'high-quality',
+                  colorInterpolation: 'sRGB'
+                }}
+              />
+              <button
+                onClick={() => setLightboxImage(null)}
+                className="absolute top-4 right-4 bg-white text-gray-800 p-2 rounded-full hover:bg-gray-100 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-110"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Posts */}
         <div className="max-w-2xl lg:mx-auto px-4 pt-6 pb-20 lg:pb-6">
           {posts.length === 0 ? (
@@ -735,6 +839,7 @@ export function FeedScreen() {
                     <MediaRenderer 
                       url={post.imageUrl} 
                       isOptimisticVideo={post.isVideo}
+                      onImageClick={() => setLightboxImage(post.imageUrl)}
                     />
                   </div>
                 )}

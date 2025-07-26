@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react'
 import { api } from '../lib/api'
+import { appLogger } from '../utils/logger'
 import { User } from '../types'
 import { useSession } from './SessionContext'
 import toast from 'react-hot-toast'
@@ -111,6 +112,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Fetch profile
       await fetchProfile(userSession.user.id, userSession.user.email)
+      
+      // Clean up invite URL parameters after successful authentication
+      const currentUrl = new URL(window.location.href)
+      if (currentUrl.searchParams.has('invite')) {
+        console.log('🧹 Cleaning up invite parameter from URL after successful authentication')
+        currentUrl.searchParams.delete('invite')
+        // Use pathname + search, or just pathname if no search params remain
+        const cleanUrl = currentUrl.search ? currentUrl.pathname + currentUrl.search : currentUrl.pathname
+        window.history.replaceState({}, document.title, cleanUrl)
+      }
     } catch (error) {
       // Only log unexpected errors (not auth-related ones)
       console.error('Unexpected session check error:', error)
@@ -132,13 +143,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const urlParams = new URLSearchParams(window.location.search)
     console.log('🔍 URL Params on page load:', window.location.href);
     console.log('🔍 Auth callback param:', urlParams.get('callback'));
+    console.log('🔍 Signup param:', urlParams.get('signup'));
     
     if (urlParams.get('callback') === 'auth') {
       console.log('✅ Auth callback detected, checking session immediately');
-      // Remove callback param from URL
-      window.history.replaceState({}, document.title, window.location.pathname)
+      
+      // Check if this is a signup flow (from invite link)
+      const isSignup = urlParams.get('signup') === 'true'
+      
+      // Remove callback and signup params from URL but preserve other params
+      const newUrl = new URL(window.location.href)
+      newUrl.searchParams.delete('callback')
+      newUrl.searchParams.delete('signup')
+      window.history.replaceState({}, document.title, newUrl.pathname + newUrl.search)
+      
       // If we have auth callback, check session immediately
-      checkSession()
+      checkSession().then(() => {
+        // After session is established, process any pending invite code
+        if (isSignup) {
+          const pendingInviteCodeId = sessionStorage.getItem('pendingInviteCodeId')
+          if (pendingInviteCodeId) {
+            appLogger.invite.callbackReceived(pendingInviteCodeId, user?.id)
+            appLogger.invite.usageStart(pendingInviteCodeId, user?.id || 'unknown')
+            console.log('🎫 Processing pending invite code:', pendingInviteCodeId)
+            
+            api.useInviteCode(pendingInviteCodeId).then(async ({ data, error }) => {
+              if (error) {
+                appLogger.invite.usageError(pendingInviteCodeId, user?.id || 'unknown', error)
+                console.error('❌ Failed to use invite code:', error)
+              } else {
+                appLogger.invite.usageSuccess(pendingInviteCodeId, user?.id || 'unknown')
+                if (user?.id && user?.email) {
+                  appLogger.invite.signupComplete(pendingInviteCodeId, user.id, user.email)
+                }
+                console.log('✅ Invite code used successfully')
+                
+                // Use the updated profile data returned from the API instead of refetching
+                if (data?.updatedProfile) {
+                  console.log('✨ Using updated profile data from invite response (no extra fetch needed)')
+                  setProfile(data.updatedProfile as User)
+                } else {
+                  // Fallback to refetch if no updated profile returned
+                  console.log('🔄 No updated profile in response, falling back to refresh...')
+                  try {
+                    const { data: currentSessionData } = await api.getCurrentSession()
+                    if (currentSessionData?.user?.id && currentSessionData?.user?.email) {
+                      await fetchProfile(currentSessionData.user.id, currentSessionData.user.email)
+                    }
+                  } catch (error) {
+                    console.error('Failed to refresh profile after invite usage:', error)
+                  }
+                }
+              }
+              // Clear the pending invite code
+              sessionStorage.removeItem('pendingInviteCodeId')
+            })
+          }
+        }
+      })
     } else {
       console.log('⏱️ No auth callback, checking session with delay');
       // Delay initial auth check slightly to avoid immediate 401 noise on fresh page load
@@ -150,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (!user) throw new Error('No user logged in')
 
-      // Optimistic update: immediately update UI  
+      // Optimistic update: immediately update UI while preserving all existing fields
       setProfile(prevProfile => {
         if (!prevProfile) return prevProfile
         return {
@@ -158,16 +220,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...updates,
           updatedAt: new Date().toISOString(),
           _updated: new Date().getTime()
-        }
+        } as User
       })
 
       const { data, error } = await api.updateProfile(updates)
 
       if (error) throw new Error(error)
 
-      // Update with server response
+      // Update with server response (should already include latest verification status)
       setProfile(data as User)
       toast.success('Profile updated!')
+      
+      // Log completion but don't refetch since server response should be complete
+      if (updates.isOnboarded === true) {
+        console.log('✅ Onboarding completed, using profile data from server response')
+      }
     } catch (error: any) {
       console.error('Update profile error:', error)
       toast.error(error.message || 'Error updating profile')

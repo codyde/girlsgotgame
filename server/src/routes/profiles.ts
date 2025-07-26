@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { db } from '../db';
-import { user } from '../db/schema';
+import { user, parentChildRelations } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { createProfileSchema, updateProfileSchema } from '../types';
 
@@ -22,6 +22,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: true,
         childId: true,
         isOnboarded: true,
+        isVerified: true,
         jerseyNumber: true,
         createdAt: true,
         updatedAt: true
@@ -67,6 +68,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: user.role,
         childId: user.childId,
         isOnboarded: user.isOnboarded,
+        isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
@@ -103,6 +105,7 @@ router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         role: user.role,
         childId: user.childId,
         isOnboarded: user.isOnboarded,
+        isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt
@@ -270,6 +273,159 @@ router.patch('/admin/:parentId/child', requireAuth, async (req: AuthenticatedReq
     res.json(updatedProfile);
   } catch (error) {
     console.error('Update child assignment error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// New multi-child relationship endpoints
+
+// Get all parent-child relationships (new format)
+router.get('/admin/parent-child-relationships', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get all relationships
+    const relationships = await db
+      .select()
+      .from(parentChildRelations)
+      .orderBy(desc(parentChildRelations.createdAt));
+
+    // Get all users to lookup parent and child info
+    const users = await db.select().from(user);
+    const userMap = users.reduce((acc, u) => {
+      acc[u.id] = u;
+      return acc;
+    }, {} as any);
+
+    // Group relationships by parent
+    const groupedRelations = relationships.reduce((acc, rel) => {
+      if (!acc[rel.parentId]) {
+        const parent = userMap[rel.parentId];
+        acc[rel.parentId] = {
+          parentId: rel.parentId,
+          parentName: parent?.name,
+          parentEmail: parent?.email,
+          children: []
+        };
+      }
+      if (rel.childId) {
+        const child = userMap[rel.childId];
+        acc[rel.parentId].children.push({
+          id: rel.id,
+          childId: rel.childId,
+          childName: child?.name,
+          childEmail: child?.email,
+          createdAt: rel.createdAt
+        });
+      }
+      return acc;
+    }, {} as any);
+
+    res.json(Object.values(groupedRelations));
+  } catch (error) {
+    console.error('Get parent-child relationships error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Add parent-child relationship
+router.post('/admin/parent-child-relationships', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { parentId, childId } = req.body;
+
+    if (!parentId || !childId) {
+      return res.status(400).json({ error: 'Parent ID and Child ID are required' });
+    }
+
+    // Check if relationship already exists
+    const existingRelation = await db
+      .select()
+      .from(parentChildRelations)
+      .where(
+        and(
+          eq(parentChildRelations.parentId, parentId),
+          eq(parentChildRelations.childId, childId)
+        )
+      );
+
+    if (existingRelation.length > 0) {
+      return res.status(400).json({ error: 'Relationship already exists' });
+    }
+
+    // Create the relationship
+    const [newRelation] = await db
+      .insert(parentChildRelations)
+      .values({
+        parentId,
+        childId,
+        createdBy: req.user!.id,
+      })
+      .returning();
+
+    res.json(newRelation);
+  } catch (error) {
+    console.error('Add parent-child relationship error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Remove parent-child relationship
+router.delete('/admin/parent-child-relationships/:relationId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { relationId } = req.params;
+
+    await db
+      .delete(parentChildRelations)
+      .where(eq(parentChildRelations.id, relationId));
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Remove parent-child relationship error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Approve user (mark as verified)
+router.patch('/admin/approve/:userId', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { userId } = req.params;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Update user to set isVerified to true
+    const [updatedUser] = await db
+      .update(user)
+      .set({ isVerified: true })
+      .where(eq(user.id, userId))
+      .returning();
+
+    if (!updatedUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    res.json({ success: true, message: 'User approved successfully' });
+  } catch (error) {
+    console.error('Error approving user:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

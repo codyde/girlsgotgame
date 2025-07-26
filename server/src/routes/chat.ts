@@ -424,6 +424,7 @@ router.get('/admin/teams/:teamId/members', requireAuth, async (req: Authenticate
         userName: user.name,
         userEmail: user.email,
         userAvatar: user.avatarUrl,
+        userRole: user.role,
       })
       .from(teamMembers)
       .innerJoin(user, eq(teamMembers.userId, user.id))
