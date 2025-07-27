@@ -23,9 +23,13 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<TeamMember[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [games, setGames] = useState<Game[]>([])
+  const [manualPlayers, setManualPlayers] = useState<any[]>([])
+  const [selectedManualPlayer, setSelectedManualPlayer] = useState<string>('')
+  const [selectedUserForLink, setSelectedUserForLink] = useState<string>('')
+  const [showLinkManualPlayer, setShowLinkManualPlayer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports'>('workouts')
+  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports' | 'manual-players'>('workouts')
   const [reports, setReports] = useState<any[]>([])
   const [reportFilter, setReportFilter] = useState<'pending' | 'resolved' | 'dismissed' | 'all'>('pending')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
@@ -83,12 +87,17 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
       )
 
+      // Fetch manual players
+      const { data: manualPlayersData, error: manualPlayersError } = await api.getAllManualPlayers()
+      if (manualPlayersError) throw new Error(manualPlayersError)
+
       setWorkouts(workoutData || [])
       setProfiles(profileData || [])
       setParentChildRelations(relationData || [])
       setParentChildRelationships(relationshipData || [])
       setTeams(teamData || [])
       setGames(sortedGames)
+      setManualPlayers(manualPlayersData || [])
     } catch (error: unknown) {
       toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
@@ -294,6 +303,54 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
       refreshRelationships()
     } catch (error: unknown) {
       toast.error('Error removing relationship: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  // Manual Players management functions
+  const refreshManualPlayers = async () => {
+    try {
+      const { data: manualPlayersData, error: manualPlayersError } = await api.getAllManualPlayers()
+      if (manualPlayersError) throw new Error(manualPlayersError)
+      
+      setManualPlayers(manualPlayersData || [])
+    } catch (error: unknown) {
+      toast.error('Error loading manual players: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const linkManualPlayerToUser = async () => {
+    if (!selectedManualPlayer || !selectedUserForLink) {
+      toast.error('Please select both a manual player and a user')
+      return
+    }
+
+    try {
+      const { error } = await api.linkManualPlayer(selectedManualPlayer, selectedUserForLink)
+      if (error) throw new Error(error)
+      
+      toast.success('Manual player linked successfully!')
+      setShowLinkManualPlayer(false)
+      setSelectedManualPlayer('')
+      setSelectedUserForLink('')
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error linking manual player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const unlinkManualPlayer = async (manualPlayerId: string) => {
+    if (!confirm('Are you sure you want to unlink this manual player?')) {
+      return
+    }
+
+    try {
+      const { error } = await api.unlinkManualPlayer(manualPlayerId)
+      if (error) throw new Error(error)
+      
+      toast.success('Manual player unlinked successfully!')
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error unlinking manual player: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -624,6 +681,16 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
             }`}
           >
             Parent-Child Relations
+          </button>
+          <button
+            onClick={() => setCurrentTab('manual-players')}
+            className={`px-6 py-3 font-medium font-body transition-colors ${
+              currentTab === 'manual-players'
+                ? 'text-primary-600 border-b-2 border-primary-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Manual Players
           </button>
           <button
             onClick={() => setCurrentTab('unverified')}
@@ -1232,11 +1299,25 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                 <div className="w-8 h-8 bg-gradient-to-br from-green-400 to-green-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
                                   {child.childName?.[0]?.toUpperCase() || child.childEmail[0].toUpperCase()}
                                 </div>
-                                <div>
+                                <div className="flex-1">
                                   <div className="font-medium font-body text-gray-900">
                                     {child.childName || child.childEmail.split('@')[0]}
                                   </div>
                                   <div className="text-sm font-body text-gray-600">{child.childEmail}</div>
+                                  {/* Show linked manual players */}
+                                  {(() => {
+                                    const linkedManualPlayers = manualPlayers.filter(mp => mp.linkedUserId === child.childId);
+                                    if (linkedManualPlayers.length > 0) {
+                                      return (
+                                        <div className="mt-1">
+                                          <div className="text-xs font-body text-blue-600">
+                                            Manual players: {linkedManualPlayers.map(mp => mp.name).join(', ')}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
                               </div>
                               <button
@@ -1406,6 +1487,201 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               ))}
             </div>
           )}
+
+          {/* Unlinked Manual Players Helper */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold font-heading text-gray-900">Unlinked Manual Players</h3>
+              <p className="text-sm font-body text-gray-600">These manual players haven't been linked to any registered users yet</p>
+            </div>
+            <div className="p-4">
+              {(() => {
+                const unlinkedPlayers = manualPlayers.filter(mp => !mp.linkedUserId);
+                if (unlinkedPlayers.length === 0) {
+                  return (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500 font-body">All manual players are linked!</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {unlinkedPlayers.map((player) => (
+                      <div key={player.id} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div>
+                          <div className="font-medium font-body text-gray-900">
+                            {player.name}
+                            {player.jerseyNumber && (
+                              <span className="ml-2 text-sm text-gray-500">#{player.jerseyNumber}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 font-body">
+                            Added: {new Date(player.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setCurrentTab('manual-players');
+                            setSelectedManualPlayer(player.id);
+                            setShowLinkManualPlayer(true);
+                          }}
+                          className="px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors font-body"
+                        >
+                          Link
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      ) : currentTab === 'manual-players' ? (
+        /* Manual Players Management */
+        <div className="space-y-6">
+          {/* Manual Players Overview */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold font-heading text-gray-900">Manual Players</h3>
+                  <p className="text-sm font-body text-gray-600">Manage manually added players and link them to registered users</p>
+                </div>
+                <button
+                  onClick={() => setShowLinkManualPlayer(!showLinkManualPlayer)}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                >
+                  <Plus className="w-4 h-4" />
+                  Link Player
+                </button>
+              </div>
+
+              {/* Link Manual Player Form */}
+              {showLinkManualPlayer && (
+                <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                  <h4 className="text-md font-medium font-heading text-gray-900 mb-4">Link Manual Player to User</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Manual Player</label>
+                      <select
+                        value={selectedManualPlayer}
+                        onChange={(e) => setSelectedManualPlayer(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      >
+                        <option value="">Select a manual player</option>
+                        {manualPlayers.filter(mp => !mp.linkedUserId).map((player) => (
+                          <option key={player.id} value={player.id}>
+                            {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Registered User</label>
+                      <select
+                        value={selectedUserForLink}
+                        onChange={(e) => setSelectedUserForLink(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      >
+                        <option value="">Select a user</option>
+                        {profiles.filter(p => p.role === 'player').map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name || profile.email.split('@')[0]} ({profile.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={linkManualPlayerToUser}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                    >
+                      Link Player
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowLinkManualPlayer(false)
+                        setSelectedManualPlayer('')
+                        setSelectedUserForLink('')
+                      }}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-body"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Manual Players List */}
+            <div className="p-4">
+              {manualPlayers.length === 0 ? (
+                <div className="text-center py-8">
+                  <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                  <p className="text-gray-500 font-body">No manual players found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {manualPlayers.map((player) => (
+                    <div key={player.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-shrink-0">
+                            <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                              <UserIcon className="w-5 h-5 text-primary-600" />
+                            </div>
+                          </div>
+                          <div>
+                            <h4 className="font-medium font-heading text-gray-900">
+                              {player.name}
+                              {player.jerseyNumber && (
+                                <span className="ml-2 text-sm text-gray-500">#{player.jerseyNumber}</span>
+                              )}
+                            </h4>
+                            {player.linkedUserId ? (
+                              <p className="text-sm text-green-600 font-body">
+                                Linked to: {player.linkedUser?.name || player.linkedUser?.email || 'Unknown User'}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-orange-600 font-body">Not linked to any user</p>
+                            )}
+                            {player.notes && (
+                              <p className="text-sm text-gray-600 font-body mt-1">{player.notes}</p>
+                            )}
+                            <p className="text-xs text-gray-400 font-body">
+                              Created: {new Date(player.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {player.linkedUserId ? (
+                          <button
+                            onClick={() => unlinkManualPlayer(player.id)}
+                            className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-body"
+                          >
+                            Unlink
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedManualPlayer(player.id)
+                              setShowLinkManualPlayer(true)
+                            }}
+                            className="px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors font-body"
+                          >
+                            Link
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : currentTab === 'reports' ? (
         /* Reports Management */

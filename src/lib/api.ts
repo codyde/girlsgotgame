@@ -392,6 +392,23 @@ class ApiClient {
     return this.request(`/games/manual-players/search?q=${encodeURIComponent(query)}`);
   }
 
+  async getAllManualPlayers() {
+    return this.request('/games/admin/manual-players');
+  }
+
+  async linkManualPlayer(manualPlayerId: string, userId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/link`, {
+      method: 'PATCH',
+      body: JSON.stringify({ userId }),
+    });
+  }
+
+  async unlinkManualPlayer(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/unlink`, {
+      method: 'PATCH',
+    });
+  }
+
   // Game Stats endpoints
   async addPlayerStat(gameId: string, playerId: string, statType: string, value?: number, quarter?: number, timeMinute?: number) {
     return this.request(`/games/${gameId}/players/${playerId}/stats`, {
