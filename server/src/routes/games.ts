@@ -1247,4 +1247,115 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
   }
 });
 
+// Get all manual players (admin only)
+router.get('/admin/manual-players', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const manualPlayersList = await db
+      .select({
+        id: manualPlayers.id,
+        name: manualPlayers.name,
+        jerseyNumber: manualPlayers.jerseyNumber,
+        linkedUserId: manualPlayers.linkedUserId,
+        linkedBy: manualPlayers.linkedBy,
+        linkedAt: manualPlayers.linkedAt,
+        notes: manualPlayers.notes,
+        createdAt: manualPlayers.createdAt,
+        updatedAt: manualPlayers.updatedAt,
+        linkedUser: {
+          id: userTable.id,
+          name: userTable.name,
+          email: userTable.email,
+        }
+      })
+      .from(manualPlayers)
+      .leftJoin(userTable, eq(manualPlayers.linkedUserId, userTable.id))
+      .orderBy(asc(manualPlayers.name));
+
+    res.json(manualPlayersList);
+  } catch (error) {
+    console.error('Error fetching manual players:', error);
+    res.status(500).json({ error: 'Failed to fetch manual players' });
+  }
+});
+
+// Link manual player to registered user (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/link', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    const { userId } = req.body;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Update the manual player with the linked user
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedUserId: userId,
+        linkedBy: user.id,
+        linkedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player linked successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error linking manual player:', error);
+    res.status(500).json({ error: 'Failed to link manual player' });
+  }
+});
+
+// Unlink manual player from registered user (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/unlink', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Update the manual player to remove the link
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedUserId: null,
+        linkedBy: null,
+        linkedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player unlinked successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error unlinking manual player:', error);
+    res.status(500).json({ error: 'Failed to unlink manual player' });
+  }
+});
+
 export default router;
