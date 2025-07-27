@@ -34,6 +34,12 @@ export const updateProfileSchema = z.object({
   jerseyNumber: z.number().int().min(1).max(99).optional(),
 });
 
+// Add points schema
+export const addPointsSchema = z.object({
+  points: z.number().int().min(1),
+  reason: z.string().optional(),
+});
+
 // Workout schemas
 export const workoutSchema = z.object({
   id: z.string().uuid(),
@@ -98,6 +104,7 @@ export const createCommentSchema = z.object({
 export type Profile = z.infer<typeof profileSchema>;
 export type CreateProfile = z.infer<typeof createProfileSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
+export type AddPoints = z.infer<typeof addPointsSchema>;
 
 export type Workout = z.infer<typeof workoutSchema>;
 export type CreateWorkout = z.infer<typeof createWorkoutSchema>;
