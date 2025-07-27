@@ -583,39 +583,39 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                           
                           {/* Quick Add Stats */}
                           {/* Mobile layout: 2 rows (3 top, 2 bottom) with square buttons */}
-                          <div className="md:hidden space-y-2">
+                          <div className="md:hidden space-y-1">
                             {/* Top row - 3 buttons */}
-                            <div className="grid grid-cols-3 gap-2">
+                            <div className="grid grid-cols-3 gap-1">
                               <button
                                 onClick={() => addPlayerStat(player.id, '2pt', 2)}
-                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 active:bg-blue-300 transition-colors font-body touch-manipulation"
+                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-blue-100 text-blue-700 rounded hover:bg-blue-200 active:bg-blue-300 transition-colors font-body touch-manipulation"
                               >
                                 2PT
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, '3pt', 3)}
-                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-green-100 text-green-700 rounded-lg hover:bg-green-200 active:bg-green-300 transition-colors font-body touch-manipulation"
+                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-green-100 text-green-700 rounded hover:bg-green-200 active:bg-green-300 transition-colors font-body touch-manipulation"
                               >
                                 3PT
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, '1pt', 1)}
-                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 active:bg-purple-300 transition-colors font-body touch-manipulation"
+                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-purple-100 text-purple-700 rounded hover:bg-purple-200 active:bg-purple-300 transition-colors font-body touch-manipulation"
                               >
                                 FT
                               </button>
                             </div>
                             {/* Bottom row - 2 buttons */}
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-2 gap-1">
                               <button
                                 onClick={() => addPlayerStat(player.id, 'steal', 1)}
-                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-red-100 text-red-700 rounded-lg hover:bg-red-200 active:bg-red-300 transition-colors font-body touch-manipulation"
+                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-red-100 text-red-700 rounded hover:bg-red-200 active:bg-red-300 transition-colors font-body touch-manipulation"
                               >
                                 STL
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, 'rebound', 1)}
-                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 active:bg-yellow-300 transition-colors font-body touch-manipulation"
+                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 active:bg-yellow-300 transition-colors font-body touch-manipulation"
                               >
                                 REB
                               </button>
