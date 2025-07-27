@@ -29,9 +29,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [showAddPlayer, setShowAddPlayer] = useState(false)
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [manualPlayerName, setManualPlayerName] = useState('')
-  const [manualPlayerJersey, setManualPlayerJersey] = useState('')
-  const [manualPlayerSuggestions, setManualPlayerSuggestions] = useState<ManualPlayer[]>([])
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null)
   const [showActivities, setShowActivities] = useState(false)
 
@@ -82,20 +79,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
     }
   }
 
-  const searchManualPlayers = async (query: string) => {
-    if (query.length < 2) {
-      setManualPlayerSuggestions([])
-      return
-    }
-    
-    try {
-      const { data, error } = await api.searchManualPlayers(query)
-      if (error) throw new Error(error)
-      setManualPlayerSuggestions(data || [])
-    } catch (error) {
-      console.error('Error searching manual players:', error)
-    }
-  }
 
   const addComment = async () => {
     if (!newComment.trim()) return
@@ -169,24 +152,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
     }
   }
 
-  const addManualPlayer = async () => {
-    if (!manualPlayerName.trim()) return
-    
-    try {
-      const jerseyNum = manualPlayerJersey ? parseInt(manualPlayerJersey) : undefined
-      const { error } = await api.addManualPlayerToGame(gameId, manualPlayerName.trim(), jerseyNum)
-      if (error) throw new Error(error)
-      
-      toast.success('Manual player added to game!')
-      fetchGameDetails()
-      setShowAddPlayer(false)
-      setManualPlayerName('')
-      setManualPlayerJersey('')
-      setManualPlayerSuggestions([])
-    } catch (error) {
-      toast.error('Error adding manual player: ' + (error instanceof Error ? error.message : String(error)))
-    }
-  }
 
   const addPlayerStat = async (playerId: string, statType: string, value: number = 1) => {
     try {
@@ -565,9 +530,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                               </div>
                               <div>
                                 <h4 className="font-medium font-body text-gray-900">{displayName}</h4>
-                                {player.manualPlayer && (
-                                  <span className="text-xs text-gray-500">Manual Player</span>
-                                )}
                               </div>
                             </div>
                             {player.isStarter && (
@@ -693,9 +655,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                     onClick={() => {
                       setShowAddPlayer(false)
                       setSelectedUserId('')
-                      setManualPlayerName('')
-                      setManualPlayerJersey('')
-                      setManualPlayerSuggestions([])
                     }}
                     className="p-1 text-gray-400 hover:text-gray-600"
                   >
@@ -729,63 +688,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                         className="mt-2 w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
                       >
                         Add Player
-                      </button>
-                    )}
-                  </div>
-                  
-                  <div className="text-center text-sm text-gray-500 font-body">OR</div>
-                  
-                  {/* Manual Players */}
-                  <div>
-                    <label className="block text-sm font-medium font-body text-gray-700 mb-2">
-                      Add Manual Player
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={manualPlayerName}
-                        onChange={(e) => {
-                          setManualPlayerName(e.target.value)
-                          searchManualPlayers(e.target.value)
-                        }}
-                        placeholder="Player name"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
-                      />
-                      
-                      {/* Autocomplete suggestions */}
-                      {manualPlayerSuggestions.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-lg shadow-lg z-10 mt-1">
-                          {manualPlayerSuggestions.map((suggestion) => (
-                            <button
-                              key={suggestion.id}
-                              onClick={() => {
-                                setManualPlayerName(suggestion.name)
-                                setManualPlayerJersey(suggestion.jerseyNumber?.toString() || '')
-                                setManualPlayerSuggestions([])
-                              }}
-                              className="w-full text-left px-3 py-2 hover:bg-gray-100 font-body"
-                            >
-                              {suggestion.name} {suggestion.jerseyNumber ? `(#${suggestion.jerseyNumber})` : ''}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <input
-                      type="number"
-                      value={manualPlayerJersey}
-                      onChange={(e) => setManualPlayerJersey(e.target.value)}
-                      placeholder="Jersey number (optional)"
-                      className="w-full mt-2 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
-                    />
-                    
-                    {manualPlayerName.trim() && (
-                      <button
-                        onClick={addManualPlayer}
-                        className="mt-2 w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-body"
-                      >
-                        Add Manual Player
                       </button>
                     )}
                   </div>
