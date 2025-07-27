@@ -80,13 +80,11 @@ export function TeamScreen() {
     return (
       <div className="h-full flex flex-col">
         <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-          <div className="max-w-4xl lg:mx-auto">
-            <div className="flex items-center gap-3 mb-2">
-              <Users className="w-8 h-8 text-primary-600" />
-              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Team</h1>
-            </div>
-            <p className="text-text-secondary font-body">Select and view your team roster</p>
+          <div className="flex items-center gap-3 mb-2">
+            <Users className="w-8 h-8 text-primary-600" />
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Team</h1>
           </div>
+          <p className="text-text-secondary font-body">Select and view your team roster</p>
         </div>
 
         <div className="flex-1 flex items-center justify-center">
@@ -104,13 +102,11 @@ export function TeamScreen() {
     return (
       <div className="h-full flex flex-col">
         <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-          <div className="max-w-4xl lg:mx-auto">
-            <div className="flex items-center gap-3 mb-2">
-              <Users className="w-8 h-8 text-primary-600" />
-              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Select Your Team</h1>
-            </div>
-            <p className="text-text-secondary font-body">Choose a team to view the roster</p>
+          <div className="flex items-center gap-3 mb-2">
+            <Users className="w-8 h-8 text-primary-600" />
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Select Your Team</h1>
           </div>
+          <p className="text-text-secondary font-body">Choose a team to view the roster</p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -162,27 +158,25 @@ export function TeamScreen() {
     <div className="h-full flex flex-col">
       {/* Fixed Header */}
       <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-        <div className="max-w-4xl lg:mx-auto">
-          <div className="flex items-center gap-3 mb-2">
-            <Users className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">{selectedTeam.name}</h1>
-            {selectedTeam.role === 'admin' && (
-              <Crown className="w-6 h-6 text-primary-500" />
-            )}
-          </div>
-          <div className="flex items-center justify-between">
-            <p className="text-text-secondary font-body">
-              {selectedTeam.description || 'Team roster and information'}
-            </p>
-            {teams.length > 1 && (
-              <button
-                onClick={() => setSelectedTeam(null)}
-                className="text-primary-600 hover:text-primary-700 font-body text-sm"
-              >
-                Switch Team
-              </button>
-            )}
-          </div>
+        <div className="flex items-center gap-3 mb-2">
+          <Users className="w-8 h-8 text-primary-600" />
+          <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">{selectedTeam.name}</h1>
+          {selectedTeam.role === 'admin' && (
+            <Crown className="w-6 h-6 text-primary-500" />
+          )}
+        </div>
+        <div className="flex items-center justify-between">
+          <p className="text-text-secondary font-body">
+            {selectedTeam.description || 'Team roster and information'}
+          </p>
+          {teams.length > 1 && (
+            <button
+              onClick={() => setSelectedTeam(null)}
+              className="text-primary-600 hover:text-primary-700 font-body text-sm"
+            >
+              Switch Team
+            </button>
+          )}
         </div>
       </div>
 
