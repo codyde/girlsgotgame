@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw, ZoomIn } from 'lucide-react'
+import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw, ZoomIn, MoreVertical, Trash2, Flag } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { useSocket } from '../hooks/useSocket'
 import { Post } from '../types'
 import toast from 'react-hot-toast'
 import { uploadMedia, validateFileSize } from '../lib/upload'
+import { GameCard } from './GameCard'
 
 interface Comment {
   id: string
@@ -125,9 +126,14 @@ const MediaRenderer = ({
   );
 };
 
-export function FeedScreen() {
+interface FeedScreenProps {
+  onGameClick?: (gameId: string) => void
+}
+
+export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   const { user, profile } = useAuth()
   const { socket, isConnected } = useSocket()
+  const isAdmin = user?.email === 'codydearkland@gmail.com'
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -141,6 +147,9 @@ export function FeedScreen() {
   const [newComment, setNewComment] = useState<Record<string, string>>({})
   const [refreshing, setRefreshing] = useState(false)
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
+  const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({})
+  const [showReportDialog, setShowReportDialog] = useState<{ postId: string; type: 'post' | 'media' } | null>(null)
+  const [reportReason, setReportReason] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Helper function to close modal and reset state
@@ -212,11 +221,37 @@ export function FeedScreen() {
     if (!socket) return
 
     const handlePostCreated = (post: Post) => {
-      setPosts(prev => [post, ...prev])
-      
-      // Initialize likes and comments for new post
-      setLikes(prev => ({ ...prev, [post.id]: [] }))
-      setComments(prev => ({ ...prev, [post.id]: [] }))
+      setPosts(prev => {
+        // Check if this is our own post replacing an optimistic one
+        const optimisticPost = prev.find(p => 
+          p.id.startsWith('temp-') && 
+          p.userId === post.userId && 
+          p.content === post.content &&
+          p.imageUrl === post.imageUrl
+        )
+        
+        if (optimisticPost) {
+          // Replace the optimistic post with the real one
+          const updated = prev.map(p => p.id === optimisticPost.id ? post : p)
+          
+          // Clean up old likes/comments data for temporary ID
+          setLikes(prevLikes => {
+            const { [optimisticPost.id]: _, ...rest } = prevLikes
+            return { ...rest, [post.id]: prevLikes[optimisticPost.id] || [] }
+          })
+          setComments(prevComments => {
+            const { [optimisticPost.id]: _, ...rest } = prevComments
+            return { ...rest, [post.id]: prevComments[optimisticPost.id] || [] }
+          })
+          
+          return updated
+        } else {
+          // Add new post from other users
+          setLikes(prev => ({ ...prev, [post.id]: [] }))
+          setComments(prev => ({ ...prev, [post.id]: [] }))
+          return [post, ...prev]
+        }
+      })
     }
 
     const handlePostUpdated = (updatedPost: Post) => {
@@ -268,6 +303,18 @@ export function FeedScreen() {
     }
   }, [lightboxImage])
 
+  // Handle click outside to close dropdown menus
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (Object.keys(openMenus).some(key => openMenus[key])) {
+        setOpenMenus({})
+      }
+    }
+
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [openMenus])
+
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
@@ -295,19 +342,82 @@ export function FeedScreen() {
     }
   }
 
-  const uploadFileToR2 = async (file: File): Promise<string | null> => {
+  const uploadFileToR2 = async (file: File): Promise<{ url: string; mediaId?: string } | null> => {
     try {
       setIsUploading(true)
       
       const result = await uploadMedia(file);
       
-      return result.url;
+      return { url: result.url, mediaId: result.mediaId };
     } catch (error) {
       console.error('Upload error:', error);
       toast.error('Error uploading file: ' + String(error));
       return null;
     } finally {
       setIsUploading(false)
+    }
+  }
+
+  const toggleMenu = (postId: string) => {
+    setOpenMenus(prev => ({
+      ...prev,
+      [postId]: !prev[postId]
+    }))
+  }
+
+  const deletePost = async (postId: string) => {
+    if (!confirm('Are you sure you want to delete this post?')) return
+
+    try {
+      const response = await api.request(`/posts/${postId}`, {
+        method: 'DELETE'
+      })
+      
+      if (response.error) {
+        throw new Error(response.error)
+      }
+
+      // Remove from local state
+      setPosts(prev => prev.filter(post => post.id !== postId))
+      setLikes(prev => {
+        const { [postId]: _, ...rest } = prev
+        return rest
+      })
+      setComments(prev => {
+        const { [postId]: _, ...rest } = prev
+        return rest
+      })
+      
+      toast.success('Post deleted successfully')
+    } catch (error) {
+      console.error('Error deleting post:', error)
+      toast.error('Failed to delete post')
+    }
+  }
+
+  const reportContent = async () => {
+    if (!showReportDialog || !reportReason.trim()) return
+
+    try {
+      const response = await api.request('/reports', {
+        method: 'POST',
+        body: JSON.stringify({
+          reportType: showReportDialog.type,
+          reportedItemId: showReportDialog.postId,
+          reason: reportReason.trim()
+        })
+      })
+      
+      if (response.error) {
+        throw new Error(response.error)
+      }
+
+      toast.success('Report submitted successfully')
+      setShowReportDialog(null)
+      setReportReason('')
+    } catch (error) {
+      console.error('Error submitting report:', error)
+      toast.error('Failed to submit report')
     }
   }
 
@@ -351,12 +461,16 @@ export function FeedScreen() {
 
     try {
       let imageUrl = null
+      let mediaId = null
 
       if (selectedFileData) {
-        imageUrl = await uploadFileToR2(selectedFileData)
-        if (!imageUrl) {
+        const uploadResult = await uploadFileToR2(selectedFileData)
+        if (!uploadResult) {
           throw new Error('Failed to upload image')
         }
+        
+        imageUrl = uploadResult.url
+        mediaId = uploadResult.mediaId
         
         // Update the optimistic post with real image URL
         setPosts(current => 
@@ -370,13 +484,29 @@ export function FeedScreen() {
 
       const { error } = await api.createPost({
         content: postContent,
-        imageUrl: imageUrl
+        imageUrl: imageUrl,
+        mediaId: mediaId
       })
 
       if (error) throw new Error(error)
 
       toast.success('Post shared!')
       // Note: Realtime will replace our optimistic post with the real one
+      
+      // Fallback: Remove optimistic post after 10 seconds if not replaced
+      setTimeout(() => {
+        setPosts(current => current.filter(post => post.id !== optimisticPost.id))
+        setLikes(current => {
+          const updated = { ...current }
+          delete updated[optimisticPost.id]
+          return updated
+        })
+        setComments(current => {
+          const updated = { ...current }
+          delete updated[optimisticPost.id]
+          return updated
+        })
+      }, 10000)
     } catch (error) {
       // Revert optimistic update on error
       setPosts(current => current.filter(post => post.id !== optimisticPost.id))
@@ -817,6 +947,53 @@ export function FeedScreen() {
                       {isOptimistic && <span className="ml-1 text-primary-500">• Sharing...</span>}
                     </p>
                   </div>
+                  
+                  {/* 3-dot menu */}
+                  {!isOptimistic && (
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          toggleMenu(post.id)
+                        }}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                      
+                      {openMenus[post.id] && (
+                        <div 
+                          className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[120px]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {(post.userId === user?.id || isAdmin) && (
+                            <button
+                              onClick={() => {
+                                deletePost(post.id)
+                                setOpenMenus(prev => ({ ...prev, [post.id]: false }))
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                              Delete
+                            </button>
+                          )}
+                          {post.userId !== user?.id && (
+                            <button
+                              onClick={() => {
+                                setShowReportDialog({ postId: post.id, type: 'post' })
+                                setOpenMenus(prev => ({ ...prev, [post.id]: false }))
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                            >
+                              <Flag className="w-4 h-4" />
+                              Report
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Workout badge */}
@@ -830,6 +1007,17 @@ export function FeedScreen() {
                       <Clock className="w-3 h-3 ml-1" />
                       <span>{postWorkouts?.durationMinutes}m</span>
                     </div>
+                  </div>
+                )}
+
+                {/* Game card */}
+                {post.postType === 'game' && post.game && (
+                  <div className="px-4 pb-2">
+                    <GameCard 
+                      game={post.game}
+                      commentCount={(post as any).commentsCount || 0}
+                      onClick={() => onGameClick?.(post.game!.id)}
+                    />
                   </div>
                 )}
 
@@ -1029,6 +1217,60 @@ export function FeedScreen() {
           )}
         </div>
       </div>
+
+      {/* Report Dialog */}
+      {showReportDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold font-heading text-text-primary">Report Content</h3>
+              <button
+                onClick={() => {
+                  setShowReportDialog(null)
+                  setReportReason('')
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Why are you reporting this {showReportDialog.type}?
+                </label>
+                <textarea
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  placeholder="Please describe why you're reporting this content..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
+                  rows={4}
+                />
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => {
+                    setShowReportDialog(null)
+                    setReportReason('')
+                  }}
+                  className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={reportContent}
+                  disabled={!reportReason.trim()}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Submit Report
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

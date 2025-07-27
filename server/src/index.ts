@@ -21,6 +21,9 @@ import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
 import chatRoutes from './routes/chat';
 import inviteRoutes from './routes/invites';
+import gamesRoutes from './routes/games';
+import mediaRoutes from './routes/media';
+import reportsRoutes from './routes/reports';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 import { db } from './db/index';
@@ -104,7 +107,8 @@ try {
           posts: '/api/posts',
           chat: '/api/chat',
           upload: '/api/upload',
-          invites: '/api/invites'
+          invites: '/api/invites',
+          games: '/api/games'
         }
       });
     });
@@ -362,6 +366,9 @@ const initializeServer = async () => {
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chat', chatRoutes);
   app.use('/api/invites', inviteRoutes);
+  app.use('/api/games', gamesRoutes);
+  app.use('/api/media', mediaRoutes);
+  app.use('/api/reports', reportsRoutes);
 
   // Error handling middleware
   app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

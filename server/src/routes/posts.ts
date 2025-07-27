@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { eq, desc, and, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { posts, user, workouts, likes, comments } from '../db/schema';
+import { posts, user, workouts, likes, comments, gameComments } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { createPostSchema, updatePostSchema, createCommentSchema } from '../types';
 import { emitToAll } from '../lib/socket';
@@ -27,6 +27,8 @@ router.get('/feed', async (req, res) => {
           }
         },
         workout: true,
+        media: true,
+        game: true,
         likes: {
           columns: {
             userId: true
@@ -48,11 +50,33 @@ router.get('/feed', async (req, res) => {
       }
     });
 
+    // For game posts, get game comment counts
+    const gamePostIds = feedPosts.filter(post => post.gameId).map(post => post.gameId);
+    let gameCommentCounts: Record<string, number> = {};
+    
+    if (gamePostIds.length > 0) {
+      const commentCountResults = await db
+        .select({
+          gameId: gameComments.gameId,
+          count: sql<number>`cast(count(*) as int)`
+        })
+        .from(gameComments)
+        .where(sql`${gameComments.gameId} = ANY(${gamePostIds})`)
+        .groupBy(gameComments.gameId);
+      
+      gameCommentCounts = commentCountResults.reduce((acc, result) => {
+        acc[result.gameId] = result.count;
+        return acc;
+      }, {} as Record<string, number>);
+    }
+
     // Transform to include like counts and comment counts
     const transformedPosts = feedPosts.map(post => ({
       ...post,
       likesCount: post.likes.length,
-      commentsCount: post.comments.length,
+      commentsCount: post.postType === 'game' && post.gameId 
+        ? gameCommentCounts[post.gameId] || 0 
+        : post.comments.length,
       userHasLiked: false // Will be set properly when user is authenticated
     }));
 
@@ -75,6 +99,7 @@ router.get('/my-posts', requireAuth, async (req: AuthenticatedRequest, res) => {
       offset: Number(offset),
       with: {
         workout: true,
+        media: true,
         likes: true,
         comments: {
           with: {
@@ -119,7 +144,8 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
             jerseyNumber: true
           }
         },
-        workout: true
+        workout: true,
+        media: true
       }
     });
 
@@ -167,16 +193,24 @@ router.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   }
 });
 
-// Delete post
+// Delete post (owner or admin)
 router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
 
+    // Check if user is admin
+    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    
+    // If admin, delete any post. If not admin, only delete own posts
+    const deleteCondition = isAdmin 
+      ? eq(posts.id, id)
+      : and(
+          eq(posts.id, id),
+          eq(posts.userId, req.user!.id)
+        );
+
     const deletedPost = await db.delete(posts)
-      .where(and(
-        eq(posts.id, id),
-        eq(posts.userId, req.user!.id)
-      ))
+      .where(deleteCondition)
       .returning();
 
     if (!deletedPost.length) {

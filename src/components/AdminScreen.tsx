@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X } from 'lucide-react'
+import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X, Calendar, Share, Flag, CheckCircle, XCircle, Play } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { User, Workout, TeamWithMemberCount, TeamMember } from '../types'
+import { User, Workout, TeamWithMemberCount, TeamMember, Game } from '../types'
 import toast from 'react-hot-toast'
 
 interface WorkoutWithUser extends Workout {
   user?: User
 }
 
-export function AdminScreen() {
+interface AdminScreenProps {
+  onGameClick?: (gameId: string) => void
+}
+
+export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const { profile } = useAuth()
   const [workouts, setWorkouts] = useState<WorkoutWithUser[]>([])
   const [profiles, setProfiles] = useState<User[]>([])
@@ -18,9 +22,12 @@ export function AdminScreen() {
   const [teams, setTeams] = useState<TeamWithMemberCount[]>([])
   const [selectedTeamMembers, setSelectedTeamMembers] = useState<TeamMember[]>([])
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
+  const [games, setGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'unverified'>('workouts')
+  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports'>('workouts')
+  const [reports, setReports] = useState<any[]>([])
+  const [reportFilter, setReportFilter] = useState<'pending' | 'resolved' | 'dismissed' | 'all'>('pending')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
@@ -28,6 +35,15 @@ export function AdminScreen() {
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [selectedParent, setSelectedParent] = useState('')
   const [selectedChild, setSelectedChild] = useState('')
+  const [showCreateGame, setShowCreateGame] = useState(false)
+  const [newGameTeamName, setNewGameTeamName] = useState('')
+  const [newGameIsHome, setNewGameIsHome] = useState(true)
+  const [newGameOpponent, setNewGameOpponent] = useState('')
+  const [newGameDate, setNewGameDate] = useState(new Date().toISOString().split('T')[0])
+  const [newGameTime, setNewGameTime] = useState('18:00')
+  const [editingGameTime, setEditingGameTime] = useState<string | null>(null)
+  const [editGameDate, setEditGameDate] = useState('')
+  const [editGameTime, setEditGameTime] = useState('')
   const fetchingData = useRef(false)
 
   // Check if user is admin
@@ -58,11 +74,21 @@ export function AdminScreen() {
       const { data: teamData, error: teamError } = await api.getAllTeamsAdmin()
       if (teamError) throw new Error(teamError)
 
+      // Fetch games
+      const { data: gameData, error: gameError } = await api.getGames()
+      if (gameError) throw new Error(gameError)
+
+      // Sort games by date (soonest first) - additional client-side sorting
+      const sortedGames = (gameData || []).sort((a, b) => 
+        new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
+      )
+
       setWorkouts(workoutData || [])
       setProfiles(profileData || [])
       setParentChildRelations(relationData || [])
       setParentChildRelationships(relationshipData || [])
       setTeams(teamData || [])
+      setGames(sortedGames)
     } catch (error: unknown) {
       toast.error('Error loading admin data: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
@@ -112,11 +138,52 @@ export function AdminScreen() {
     }
   }, [])
 
+  const refreshGames = useCallback(async () => {
+    try {
+      const { data: gameData, error: gameError } = await api.getGames()
+      if (gameError) throw new Error(gameError)
+      
+      // Sort games by date (soonest first) - additional client-side sorting
+      const sortedGames = (gameData || []).sort((a, b) => 
+        new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
+      )
+      
+      setGames(sortedGames)
+    } catch (error) {
+      console.error('Error refreshing games:', error)
+    }
+  }, [])
+
+  const loadReports = useCallback(async () => {
+    try {
+      const params = new URLSearchParams()
+      if (reportFilter !== 'all') {
+        params.append('status', reportFilter)
+      }
+      params.append('limit', '100')
+      
+      const response = await api.request(`/reports?${params.toString()}`)
+      if (response.error) {
+        throw new Error(response.error)
+      }
+      setReports(response.data || [])
+    } catch (error) {
+      console.error('Error loading reports:', error)
+      toast.error('Failed to load reports')
+    }
+  }, [reportFilter])
+
   useEffect(() => {
     if (isAdmin) {
       fetchData()
     }
   }, [isAdmin, fetchData])
+
+  useEffect(() => {
+    if (isAdmin && currentTab === 'reports') {
+      loadReports()
+    }
+  }, [isAdmin, currentTab, loadReports])
 
   const deleteWorkout = async (workoutId: string, pointsToDeduct: number, userId: string) => {
     try {
@@ -260,6 +327,151 @@ export function AdminScreen() {
     }
   }
 
+  const createGame = async () => {
+    if (!newGameTeamName.trim() || !newGameOpponent.trim()) {
+      toast.error('Team name and opponent are required')
+      return
+    }
+
+    try {
+      const gameDateTime = new Date(`${newGameDate}T${newGameTime}:00`).toISOString()
+      const { error } = await api.createGame(
+        newGameTeamName.trim(),
+        newGameIsHome,
+        newGameOpponent.trim(),
+        gameDateTime
+      )
+      if (error) throw new Error(error)
+      
+      toast.success('Game created successfully')
+      setShowCreateGame(false)
+      setNewGameTeamName('')
+      setNewGameOpponent('')
+      setNewGameDate(new Date().toISOString().split('T')[0])
+      setNewGameTime('18:00')
+      setNewGameIsHome(true)
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error creating game: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const updateGameScore = async (gameId: string, homeScore: number, awayScore: number) => {
+    try {
+      const { error } = await api.updateGameScore(gameId, homeScore, awayScore)
+      if (error) throw new Error(error)
+      
+      toast.success('Game score updated')
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error updating score: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const deleteGame = async (gameId: string, teamName: string, opponent: string) => {
+    if (!confirm(`Are you sure you want to delete the game between ${teamName} and ${opponent}?`)) {
+      return
+    }
+
+    try {
+      const { error } = await api.deleteGame(gameId)
+      if (error) throw new Error(error)
+      
+      toast.success('Game deleted successfully')
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error deleting game: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const shareGameToFeed = async (gameId: string) => {
+    try {
+      const { error } = await api.shareGameToFeed(gameId)
+      if (error) throw new Error(error)
+      
+      toast.success('Game shared to feed!')
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error sharing to feed: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const startEditingGameTime = (gameId: string, currentDateTime: string) => {
+    const date = new Date(currentDateTime)
+    setEditGameDate(date.toISOString().split('T')[0])
+    setEditGameTime(date.toTimeString().slice(0, 5))
+    setEditingGameTime(gameId)
+  }
+
+  const cancelEditingGameTime = () => {
+    setEditingGameTime(null)
+    setEditGameDate('')
+    setEditGameTime('')
+  }
+
+  const updateGameDateTime = async (gameId: string) => {
+    if (!editGameDate || !editGameTime) {
+      toast.error('Please provide both date and time')
+      return
+    }
+
+    try {
+      const gameDateTime = new Date(`${editGameDate}T${editGameTime}:00`).toISOString()
+      const response = await api.request(`/games/${gameId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ gameDate: gameDateTime })
+      })
+      if (response.error) {
+        throw new Error(response.error)
+      }
+      
+      toast.success('Game time updated successfully')
+      setEditingGameTime(null)
+      setEditGameDate('')
+      setEditGameTime('')
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error updating game time: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const updateReportStatus = async (reportId: string, status: 'resolved' | 'dismissed', adminNotes?: string) => {
+    try {
+      const response = await api.request(`/reports/${reportId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, adminNotes })
+      })
+      if (response.error) {
+        throw new Error(response.error)
+      }
+      
+      toast.success(`Report ${status}`)
+      loadReports()
+    } catch (error: unknown) {
+      toast.error('Error updating report: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const deleteReportedContent = async (reportId: string, contentType: string) => {
+    if (!confirm(`Are you sure you want to delete this ${contentType}? This action cannot be undone.`)) {
+      return
+    }
+
+    try {
+      const response = await api.request(`/reports/${reportId}/content`, {
+        method: 'DELETE'
+      })
+      if (response.error) {
+        throw new Error(response.error)
+      }
+      
+      toast.success('Content deleted and report resolved')
+      loadReports()
+    } catch (error: unknown) {
+      toast.error('Error deleting content: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -394,6 +606,16 @@ export function AdminScreen() {
             Teams
           </button>
           <button
+            onClick={() => setCurrentTab('games')}
+            className={`px-6 py-3 font-medium font-body transition-colors ${
+              currentTab === 'games'
+                ? 'text-primary-600 border-b-2 border-primary-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Games
+          </button>
+          <button
             onClick={() => setCurrentTab('relations')}
             className={`px-6 py-3 font-medium font-body transition-colors ${
               currentTab === 'relations'
@@ -412,6 +634,16 @@ export function AdminScreen() {
             }`}
           >
             Unverified Users
+          </button>
+          <button
+            onClick={() => setCurrentTab('reports')}
+            className={`px-6 py-3 font-medium font-body transition-colors ${
+              currentTab === 'reports'
+                ? 'text-primary-600 border-b-2 border-primary-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Reports
           </button>
         </div>
       </div>
@@ -604,6 +836,286 @@ export function AdminScreen() {
               </div>
             </div>
           )}
+        </div>
+      ) : currentTab === 'games' ? (
+        /* Games Management */
+        <div className="space-y-6">
+          {/* Create Game Section */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold font-heading text-gray-900">Games Management</h3>
+                  <p className="text-sm font-body text-gray-600">Create and manage game schedule</p>
+                </div>
+                <button
+                  onClick={() => setShowCreateGame(!showCreateGame)}
+                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create Game
+                </button>
+              </div>
+            </div>
+
+            {showCreateGame && (
+              <div className="p-4 border-b border-gray-200 bg-gray-50">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Team Name</label>
+                      <input
+                        type="text"
+                        value={newGameTeamName}
+                        onChange={(e) => setNewGameTeamName(e.target.value)}
+                        placeholder="Enter your team name"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Opponent Team</label>
+                      <input
+                        type="text"
+                        value={newGameOpponent}
+                        onChange={(e) => setNewGameOpponent(e.target.value)}
+                        placeholder="Enter opponent team name"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Home/Away</label>
+                      <select
+                        value={newGameIsHome ? 'home' : 'away'}
+                        onChange={(e) => setNewGameIsHome(e.target.value === 'home')}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      >
+                        <option value="home">Home</option>
+                        <option value="away">Away</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Game Date</label>
+                      <input
+                        type="date"
+                        value={newGameDate}
+                        onChange={(e) => setNewGameDate(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Start Time</label>
+                      <input
+                        type="time"
+                        value={newGameTime}
+                        onChange={(e) => setNewGameTime(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={createGame}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                    >
+                      Create Game
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowCreateGame(false)
+                        setNewGameTeamName('')
+                        setNewGameOpponent('')
+                        setNewGameDate(new Date().toISOString().split('T')[0])
+                        setNewGameTime('18:00')
+                        setNewGameIsHome(true)
+                      }}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-body"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Games List */}
+            <div className="p-4">
+              {games.length === 0 ? (
+                <div className="text-center py-8">
+                  <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="font-body text-gray-500">No games created yet</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {games.map((game) => {
+                    const isHomeTeam = game.isHome
+                    const homeTeamName = isHomeTeam ? game.teamName : game.opponentTeam
+                    const awayTeamName = isHomeTeam ? game.opponentTeam : game.teamName
+                    const isCompleted = game.homeScore !== null && game.awayScore !== null
+                    
+                    return (
+                      <div
+                        key={game.id}
+                        className="border border-gray-200 rounded-lg overflow-hidden"
+                      >
+                        {/* Game Header */}
+                        <div className="p-4 bg-gray-50 border-b border-gray-200">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3 flex-1">
+                              <Calendar className="w-5 h-5 text-gray-500" />
+                              {editingGameTime === game.id ? (
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="date"
+                                    value={editGameDate}
+                                    onChange={(e) => setEditGameDate(e.target.value)}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm font-body"
+                                  />
+                                  <input
+                                    type="time"
+                                    value={editGameTime}
+                                    onChange={(e) => setEditGameTime(e.target.value)}
+                                    className="px-2 py-1 border border-gray-300 rounded text-sm font-body"
+                                  />
+                                  <button
+                                    onClick={() => updateGameDateTime(game.id)}
+                                    className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={cancelEditingGameTime}
+                                    className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <span 
+                                    className="font-medium font-body text-gray-900 cursor-pointer hover:text-primary-600 transition-colors"
+                                    onClick={() => onGameClick?.(game.id)}
+                                  >
+                                    {new Date(game.gameDate).toLocaleDateString('en-US', {
+                                      weekday: 'short',
+                                      month: 'short',
+                                      day: 'numeric',
+                                      hour: '2-digit',
+                                      minute: '2-digit'
+                                    })}
+                                  </span>
+                                  <button
+                                    onClick={() => startEditingGameTime(game.id, game.gameDate)}
+                                    className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                                    title="Edit game time"
+                                  >
+                                    <Edit2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                              <span className={`px-2 py-1 text-xs font-medium font-body rounded-full ${
+                                isCompleted ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {isCompleted ? 'Final' : 'Scheduled'}
+                              </span>
+                              {game.isSharedToFeed && (
+                                <span className="px-2 py-1 text-xs font-medium font-body rounded-full bg-primary-100 text-primary-700">
+                                  Shared
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {!game.isSharedToFeed && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    shareGameToFeed(game.id)
+                                  }}
+                                  className="p-2 text-primary-500 hover:text-primary-700 hover:bg-primary-50 rounded-lg transition-colors"
+                                  title="Share to Feed"
+                                >
+                                  <Share className="w-4 h-4" />
+                                </button>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deleteGame(game.id, game.teamName, game.opponentTeam)
+                                }}
+                                className="p-2 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete Game"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sports Card Layout */}
+                        <div className="p-6">
+                          <div className="flex items-center justify-center">
+                            <div className="flex items-center w-full max-w-2xl">
+                              {/* Home Team */}
+                              <div className="flex-1 text-center p-4 bg-gray-50 rounded-l-lg border-r">
+                                <div className="flex items-center justify-center gap-2 mb-2">
+                                  <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Home</span>
+                                </div>
+                                <h4 className="text-lg font-bold font-heading text-gray-900 mb-2">
+                                  {homeTeamName}
+                                </h4>
+                                <div className="space-y-2">
+                                  <input
+                                    type="number"
+                                    value={game.homeScore || ''}
+                                    onChange={(e) => {
+                                      const homeScore = parseInt(e.target.value) || 0
+                                      const awayScore = game.awayScore || 0
+                                      updateGameScore(game.id, homeScore, awayScore)
+                                    }}
+                                    placeholder="Score"
+                                    className="w-20 px-2 py-1 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* VS Separator */}
+                              <div className="px-4 py-6 bg-white border-t border-b border-gray-200">
+                                <div className="text-xl font-bold text-gray-400 font-body">VS</div>
+                              </div>
+
+                              {/* Away Team */}
+                              <div className="flex-1 text-center p-4 bg-gray-50 rounded-r-lg border-l">
+                                <div className="flex items-center justify-center gap-2 mb-2">
+                                  <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Away</span>
+                                </div>
+                                <h4 className="text-lg font-bold font-heading text-gray-900 mb-2">
+                                  {awayTeamName}
+                                </h4>
+                                <div className="space-y-2">
+                                  <input
+                                    type="number"
+                                    value={game.awayScore || ''}
+                                    onChange={(e) => {
+                                      const awayScore = parseInt(e.target.value) || 0
+                                      const homeScore = game.homeScore || 0
+                                      updateGameScore(game.id, homeScore, awayScore)
+                                    }}
+                                    placeholder="Score"
+                                    className="w-20 px-2 py-1 text-center text-2xl font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : currentTab === 'relations' ? (
         /* Parent-Child Relations */
@@ -894,6 +1406,186 @@ export function AdminScreen() {
               ))}
             </div>
           )}
+        </div>
+      ) : currentTab === 'reports' ? (
+        /* Reports Management */
+        <div className="space-y-6">
+          {/* Reports Filter and Overview */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold font-heading text-gray-900">Content Reports</h3>
+                  <p className="text-sm font-body text-gray-600">Manage user reports for posts and media content</p>
+                </div>
+                <div className="flex gap-2">
+                  {(['pending', 'resolved', 'dismissed', 'all'] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setReportFilter(filter)}
+                      className={`px-3 py-1 rounded-full text-sm font-heading transition-colors ${
+                        reportFilter === filter
+                          ? 'bg-primary-600 text-white'
+                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      }`}
+                    >
+                      {filter.charAt(0).toUpperCase() + filter.slice(1)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Reports List */}
+            <div className="p-4">
+              {reports.length === 0 ? (
+                <div className="text-center py-8">
+                  <Flag className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p className="font-body text-gray-500">
+                    {reportFilter === 'all' ? 'No reports found' : `No ${reportFilter} reports`}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {reports.map((report) => (
+                    <div
+                      key={report.id}
+                      className={`border rounded-lg p-4 ${
+                        report.status === 'pending' 
+                          ? 'border-orange-200 bg-orange-50' 
+                          : report.status === 'resolved'
+                          ? 'border-green-200 bg-green-50'
+                          : 'border-gray-200 bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-3 h-3 rounded-full ${
+                            report.status === 'pending' 
+                              ? 'bg-orange-500' 
+                              : report.status === 'resolved'
+                              ? 'bg-green-500'
+                              : 'bg-gray-500'
+                          }`} />
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium font-body text-gray-900">
+                                {report.reportType === 'post' ? 'Post' : 'Media'} Report
+                              </span>
+                              <span className={`px-2 py-1 text-xs font-medium font-body rounded-full ${
+                                report.status === 'pending' 
+                                  ? 'bg-orange-100 text-orange-700' 
+                                  : report.status === 'resolved'
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-700'
+                              }`}>
+                                {report.status}
+                              </span>
+                            </div>
+                            <div className="text-sm font-body text-gray-600 mt-1">
+                              Reported by {report.reporterName || 'Unknown'} • {new Date(report.createdAt).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                        {report.status === 'pending' && (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => updateReportStatus(report.id, 'dismissed')}
+                              className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                              title="Dismiss Report"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => updateReportStatus(report.id, 'resolved')}
+                              className="p-2 text-green-500 hover:text-green-700 hover:bg-green-100 rounded-lg transition-colors"
+                              title="Mark Resolved"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => deleteReportedContent(report.id, report.reportType)}
+                              className="p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-colors"
+                              title="Delete Content"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Report Reason */}
+                      <div className="mb-3">
+                        <div className="text-sm font-medium font-body text-gray-700 mb-1">Reason:</div>
+                        <div className="text-sm font-body text-gray-600 bg-white p-2 rounded border">
+                          {report.reason}
+                        </div>
+                      </div>
+
+                      {/* Reported Content */}
+                      {report.reportedItem && (
+                        <div className="mb-3">
+                          <div className="text-sm font-medium font-body text-gray-700 mb-2">Reported Content:</div>
+                          <div className="bg-white border rounded-lg p-3">
+                            {report.reportType === 'post' ? (
+                              <div>
+                                {report.reportedItem.content && (
+                                  <p className="text-sm font-body text-gray-800 mb-2">
+                                    {report.reportedItem.content}
+                                  </p>
+                                )}
+                                {report.reportedItem.imageUrl && (
+                                  <img
+                                    src={report.reportedItem.imageUrl}
+                                    alt="Reported post"
+                                    className="max-w-xs max-h-32 object-cover rounded"
+                                  />
+                                )}
+                                <div className="text-xs font-body text-gray-500 mt-2">
+                                  Posted by {report.reportedItem.userName || 'Unknown'}
+                                </div>
+                              </div>
+                            ) : (
+                              <div>
+                                <div className="flex items-center gap-3">
+                                  {report.reportedItem.mediaType === 'image' ? (
+                                    <img
+                                      src={report.reportedItem.uploadUrl}
+                                      alt="Reported media"
+                                      className="w-16 h-16 object-cover rounded"
+                                    />
+                                  ) : (
+                                    <div className="w-16 h-16 bg-gray-200 rounded flex items-center justify-center">
+                                      <Play className="w-6 h-6 text-gray-400" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-sm font-medium font-body text-gray-800">
+                                      {report.reportedItem.originalName}
+                                    </div>
+                                    <div className="text-xs font-body text-gray-500">
+                                      {report.reportedItem.mediaType} • Uploaded by {report.reportedItem.uploaderName || 'Unknown'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Admin Notes */}
+                      {report.adminNotes && (
+                        <div className="text-sm font-body text-gray-600">
+                          <span className="font-medium">Admin Notes:</span> {report.adminNotes}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         <>

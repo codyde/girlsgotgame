@@ -4,6 +4,11 @@ import { r2Client, R2_BUCKET_NAME, R2_PUBLIC_DOMAIN } from '../config/r2';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import { auth } from '../config/auth';
+import { db } from '../db/index';
+import { mediaUploads } from '../db/schema';
+import sharp from 'sharp';
+import ffmpeg from 'fluent-ffmpeg';
 
 const router = Router();
 
@@ -43,6 +48,84 @@ const generateFileName = (originalName: string): string => {
   const timestamp = Date.now();
   const uniqueId = uuidv4().substring(0, 8);
   return `${name}-${timestamp}-${uniqueId}${ext}`;
+};
+
+// Authentication middleware
+const requireAuth = async (req: any, res: any, next: any) => {
+  try {
+    const session = await auth.api.getSession({
+      headers: req.headers as any,
+    });
+
+    if (!session?.user) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    req.user = session.user;
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(401).json({ error: 'Authentication failed' });
+  }
+};
+
+// Helper function to get image dimensions
+const getImageDimensions = async (buffer: Buffer): Promise<{ width: number; height: number }> => {
+  try {
+    const metadata = await sharp(buffer).metadata();
+    return {
+      width: metadata.width || 0,
+      height: metadata.height || 0,
+    };
+  } catch (error) {
+    console.warn('Failed to get image dimensions:', error);
+    return { width: 0, height: 0 };
+  }
+};
+
+// Helper to save media record to database
+const saveMediaRecord = async (
+  userId: string,
+  file: Express.Multer.File,
+  fileName: string,
+  uploadUrl: string,
+  dimensions?: { width: number; height: number }
+) => {
+  try {
+    const isVideo = file.mimetype.startsWith('video/');
+    const isImage = file.mimetype.startsWith('image/');
+
+    let width: number | undefined;
+    let height: number | undefined;
+
+    if (isImage && dimensions) {
+      width = dimensions.width;
+      height = dimensions.height;
+    }
+
+    const [mediaRecord] = await db
+      .insert(mediaUploads)
+      .values({
+        uploadedBy: userId,
+        fileName,
+        originalName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        mediaType: isVideo ? 'video' : 'image',
+        uploadUrl,
+        width,
+        height,
+        tags: JSON.stringify([]),
+        isVisible: true,
+      })
+      .returning();
+
+    return mediaRecord;
+  } catch (error) {
+    console.warn('Failed to save media record:', error);
+    // Don't fail the upload if we can't save the record
+    return null;
+  }
 };
 
 // Upload single file
@@ -127,7 +210,7 @@ router.post('/avatar', upload.single('file'), async (req, res) => {
 });
 
 // Upload media for feed posts
-router.post('/media', upload.single('file'), async (req, res) => {
+router.post('/media', requireAuth, upload.single('file'), async (req: any, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -135,6 +218,12 @@ router.post('/media', upload.single('file'), async (req, res) => {
 
     const fileName = `media/${generateFileName(req.file.originalname)}`;
     const contentType = req.file.mimetype;
+
+    // Get image dimensions for images
+    let dimensions;
+    if (req.file.mimetype.startsWith('image/')) {
+      dimensions = await getImageDimensions(req.file.buffer);
+    }
 
     // Upload to R2
     const command = new PutObjectCommand({
@@ -151,11 +240,15 @@ router.post('/media', upload.single('file'), async (req, res) => {
 
     console.log('📹 Media uploaded to R2:', url);
 
+    // Save media record to database for tracking in media gallery
+    const mediaRecord = await saveMediaRecord(req.user.id, req.file, fileName, url, dimensions);
+
     res.json({
       url,
       name: fileName,
       size: req.file.size,
       type: contentType,
+      mediaId: mediaRecord?.id, // Include media ID for reference
     });
   } catch (error) {
     console.error('❌ Media upload error:', error);

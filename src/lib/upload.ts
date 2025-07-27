@@ -5,6 +5,7 @@ export interface UploadResult {
   name: string;
   size: number;
   type: string;
+  mediaId?: string; // New field for media tracking
 }
 
 export interface UploadProgress {
@@ -61,6 +62,7 @@ export async function uploadFile(
     });
 
     xhr.open('POST', `${API_URL}/api/upload/${endpoint}`);
+    xhr.withCredentials = true; // Include cookies for authentication
     xhr.send(formData);
   });
 }
