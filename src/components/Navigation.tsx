@@ -148,7 +148,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                 </div>
 
                 {/* Navigation Items */}
-                <div className="flex-1 p-4">
+                <div className="flex-1 p-2 sm:p-4 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
                   <div className="space-y-2">
                     {tabs.map((tab) => {
                       const Icon = tab.icon
@@ -168,7 +168,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                           }`}
                         >
                           <Icon className="w-5 h-5" />
-                          <span className="font-medium font-heading text-2xl">{tab.label}</span>
+                          <span className="font-medium font-heading text-2xl sm:text-2xl text-xl">{tab.label}</span>
                         </button>
                       )
                     })}
@@ -176,7 +176,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                 </div>
 
                 {/* Sign Out Button */}
-                <div className="p-4 border-t border-border-primary">
+                <div className="p-2 sm:p-4 border-t border-border-primary">
                   {canCreateInvites && (
                     <button
                       onClick={() => {
@@ -186,7 +186,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                       className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-primary-600 hover:text-primary-700 hover:bg-primary-50 transition-colors text-left font-heading mb-2"
                     >
                       <UserPlus className="w-5 h-5" />
-                      <span className="font-medium font-heading text-2xl">Create Invite</span>
+                      <span className="font-medium font-heading text-2xl sm:text-2xl text-xl">Create Invite</span>
                     </button>
                   )}
                   <button
@@ -198,7 +198,7 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-red-600 hover:text-red-700 hover:bg-red-50 transition-colors text-left font-heading"
                   >
                     <LogOut className="w-5 h-5" />
-                    <span className="font-medium font-heading text-2xl">Sign Out</span>
+                    <span className="font-medium font-heading text-2xl sm:text-2xl text-xl">Sign Out</span>
                   </button>
                 </div>
               </div>
