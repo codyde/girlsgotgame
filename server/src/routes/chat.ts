@@ -8,6 +8,49 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, experimental_transcribe as transcribe, generateObject } from 'ai';
 import multer from 'multer';
 
+// File polyfill for Node.js - required by @ai-sdk/openai internally
+if (!globalThis.File) {
+  globalThis.File = class File {
+    constructor(fileBits, fileName, options = {}) {
+      this.name = fileName;
+      this.type = options.type || '';
+      this.lastModified = options.lastModified || Date.now();
+      
+      // Handle different input types
+      if (Buffer.isBuffer(fileBits)) {
+        this._buffer = fileBits;
+      } else if (Array.isArray(fileBits)) {
+        this._buffer = Buffer.concat(fileBits.map(bit => Buffer.isBuffer(bit) ? bit : Buffer.from(bit)));
+      } else {
+        this._buffer = Buffer.from(fileBits);
+      }
+      
+      this.size = this._buffer.length;
+    }
+    
+    async arrayBuffer() {
+      return this._buffer.buffer.slice(
+        this._buffer.byteOffset,
+        this._buffer.byteOffset + this._buffer.byteLength
+      );
+    }
+    
+    stream() {
+      const { Readable } = require('stream');
+      return Readable.from(this._buffer);
+    }
+    
+    async text() {
+      return this._buffer.toString();
+    }
+    
+    slice(start = 0, end = this.size, contentType = '') {
+      const slicedBuffer = this._buffer.slice(start, end);
+      return new File([slicedBuffer], this.name, { type: contentType || this.type });
+    }
+  };
+}
+
 // Configure OpenAI
 const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -820,10 +863,11 @@ router.post('/transcribe', requireAuth, upload.single('audio'), async (req: Auth
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    // Use OpenAI's transcription model with Vercel AI SDK
+    // Use Vercel AI SDK transcribe with Buffer directly
+    // The AI SDK expects Buffer, Uint8Array, ArrayBuffer, or base64 string
     const { text } = await transcribe({
       model: openai.transcription('whisper-1'),
-      audio: new Uint8Array(req.file.buffer),
+      audio: req.file.buffer, // Pass Buffer directly - this is what AI SDK expects
       providerOptions: {
         openai: {
           language: 'en',
