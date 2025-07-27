@@ -31,6 +31,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [selectedUserId, setSelectedUserId] = useState('')
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null)
   const [showActivities, setShowActivities] = useState(false)
+  const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
 
@@ -154,13 +155,38 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
 
 
   const addPlayerStat = async (playerId: string, statType: string, value: number = 1) => {
+    // Optimistic update
+    const optimisticStat = {
+      statType,
+      value,
+      timestamp: Date.now()
+    }
+    
+    setOptimisticStats(prev => ({
+      ...prev,
+      [playerId]: [...(prev[playerId] || []), optimisticStat]
+    }))
+    
     try {
       const { error } = await api.addPlayerStat(gameId, playerId, statType, value)
       if (error) throw new Error(error)
       
       toast.success(`${statType.toUpperCase()} recorded!`)
+      
+      // Clear optimistic stat and refresh real data
+      setOptimisticStats(prev => ({
+        ...prev,
+        [playerId]: (prev[playerId] || []).filter(s => s.timestamp !== optimisticStat.timestamp)
+      }))
+      
       fetchGameDetails()
     } catch (error) {
+      // Revert optimistic update on error
+      setOptimisticStats(prev => ({
+        ...prev,
+        [playerId]: (prev[playerId] || []).filter(s => s.timestamp !== optimisticStat.timestamp)
+      }))
+      
       toast.error('Error adding stat: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
@@ -512,12 +538,14 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                       const displayName = player.user?.name || player.manualPlayer?.name || 'Unknown Player'
                       const jerseyNumber = player.jerseyNumber || player.user?.jerseyNumber || player.manualPlayer?.jerseyNumber
                       const stats = player.stats || []
+                      const playerOptimisticStats = optimisticStats[player.id] || []
                       
-                      // Calculate stat totals
-                      const points = stats.filter(s => ['2pt', '3pt', '1pt'].includes(s.statType))
+                      // Calculate stat totals including optimistic updates
+                      const allStats = [...stats, ...playerOptimisticStats]
+                      const points = allStats.filter(s => ['2pt', '3pt', '1pt'].includes(s.statType))
                         .reduce((sum, s) => sum + (s.statType === '3pt' ? 3 : s.statType === '2pt' ? 2 : 1), 0)
-                      const steals = stats.filter(s => s.statType === 'steal').length
-                      const rebounds = stats.filter(s => s.statType === 'rebound').length
+                      const steals = allStats.filter(s => s.statType === 'steal').length
+                      const rebounds = allStats.filter(s => s.statType === 'rebound').length
                       
                       return (
                         <div key={player.id} className="border border-gray-200 rounded-lg p-4">
@@ -554,37 +582,43 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                           </div>
                           
                           {/* Quick Add Stats */}
-                          <div className="grid grid-cols-5 gap-1">
-                            <button
-                              onClick={() => addPlayerStat(player.id, '2pt', 2)}
-                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-body"
-                            >
-                              2PT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, '3pt', 3)}
-                              className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors font-body"
-                            >
-                              3PT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, '1pt', 1)}
-                              className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors font-body"
-                            >
-                              FT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, 'steal', 1)}
-                              className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors font-body"
-                            >
-                              STL
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, 'rebound', 1)}
-                              className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition-colors font-body"
-                            >
-                              REB
-                            </button>
+                          <div className="space-y-2">
+                            {/* Top row - 3 buttons */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <button
+                                onClick={() => addPlayerStat(player.id, '2pt', 2)}
+                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 active:bg-blue-300 transition-colors font-body touch-manipulation"
+                              >
+                                2PT
+                              </button>
+                              <button
+                                onClick={() => addPlayerStat(player.id, '3pt', 3)}
+                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-green-100 text-green-700 rounded-lg hover:bg-green-200 active:bg-green-300 transition-colors font-body touch-manipulation"
+                              >
+                                3PT
+                              </button>
+                              <button
+                                onClick={() => addPlayerStat(player.id, '1pt', 1)}
+                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 active:bg-purple-300 transition-colors font-body touch-manipulation"
+                              >
+                                FT
+                              </button>
+                            </div>
+                            {/* Bottom row - 2 buttons */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                onClick={() => addPlayerStat(player.id, 'steal', 1)}
+                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-red-100 text-red-700 rounded-lg hover:bg-red-200 active:bg-red-300 transition-colors font-body touch-manipulation"
+                              >
+                                STL
+                              </button>
+                              <button
+                                onClick={() => addPlayerStat(player.id, 'rebound', 1)}
+                                className="aspect-square flex items-center justify-center text-sm font-semibold bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 active:bg-yellow-300 transition-colors font-body touch-manipulation"
+                              >
+                                REB
+                              </button>
+                            </div>
                           </div>
                           
                           {/* Show detailed stats if any */}
