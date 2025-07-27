@@ -70,7 +70,11 @@ export const auth: any = betterAuth({
         
         if (newSession && newSession.user) {
           // Check if this is an invite signup by looking for invite code in referrer or callback URL
+<<<<<<< HEAD
           const referrer = ctx.request?.headers?.get('referer') || '';
+=======
+          const referrer = ctx.request?.headers?.referer || '';
+>>>>>>> origin/main
           const inviteCode = referrer.includes('invite=') ? 
             referrer.split('invite=')[1]?.split('&')[0] : null;
           
