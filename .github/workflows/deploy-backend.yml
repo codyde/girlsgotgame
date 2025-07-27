@@ -18,4 +18,5 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Deploy Backend to Railway
+        working-directory: ./server
         run: railway up --service=${{ env.SVC_ID }} --detach
