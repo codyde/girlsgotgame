@@ -56,7 +56,7 @@ export const auth: any = betterAuth({
   },
   trustedOrigins: process.env.NODE_ENV === 'production'
       ? ["https://girlsgotgame.app", "myapp://"]
-      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001"],
+      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "myapp://", "exp://192.168.1.8:8081/--"],
   callbacks: {
     redirect: async (url: string, request: any) => {
       const { headers } = request;
