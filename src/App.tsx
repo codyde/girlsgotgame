@@ -11,8 +11,11 @@ import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
 import { TrainingScreen } from './components/TrainingScreen'
+import { GamesScreen } from './components/GamesScreen'
+import { GameDetailsScreen } from './components/GameDetailsScreen'
 import { TeamChatScreen } from './components/TeamChatScreen'
 import { TeamScreen } from './components/TeamScreen'
+import { MediaScreen } from './components/MediaScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AdminScreen } from './components/AdminScreen'
 import { Navigation } from './components/Navigation'
@@ -20,6 +23,7 @@ import { Navigation } from './components/Navigation'
 function AppContent() {
   const { session, profile, loading } = useAuth()
   const [currentTab, setCurrentTab] = useState('feed')
+  const [currentGameId, setCurrentGameId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
 
@@ -87,24 +91,44 @@ function AppContent() {
   }
 
 
+  const navigateToGame = (gameId: string) => {
+    setCurrentGameId(gameId)
+    setCurrentTab('game-details')
+  }
+
+  const navigateBack = () => {
+    setCurrentGameId(null)
+    setCurrentTab('games')
+  }
+
   const renderCurrentScreen = () => {
     switch (currentTab) {
       case 'feed':
-        return <FeedScreen />
+        return <FeedScreen onGameClick={navigateToGame} />
       case 'training':
         return <TrainingScreen />
+      case 'games':
+        return <GamesScreen onGameClick={navigateToGame} />
+      case 'game-details':
+        return currentGameId ? (
+          <GameDetailsScreen gameId={currentGameId} onBack={navigateBack} />
+        ) : (
+          <GamesScreen onGameClick={navigateToGame} />
+        )
       case 'chat':
         return <TeamChatScreen />
       case 'team':
         return <TeamScreen />
+      case 'media':
+        return <MediaScreen />
       case 'profile':
         return <ProfileScreen />
       case 'admin':
-        return <AdminScreen />
+        return <AdminScreen onGameClick={navigateToGame} />
       case 'parent-dashboard':
         return <ParentDashboard />
       default:
-        return <FeedScreen />
+        return <FeedScreen onGameClick={navigateToGame} />
     }
   }
 

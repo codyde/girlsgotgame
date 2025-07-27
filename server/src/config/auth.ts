@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import crypto from 'crypto';
 import { eq, and } from 'drizzle-orm';
+import { expo } from "@better-auth/expo";
 
 // Import the schema for Better Auth
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -31,6 +32,7 @@ console.log('🔗 Testing database connection...');
 console.log('DATABASE_URL exists:', !!process.env.DATABASE_URL);
 
 export const auth: any = betterAuth({
+  plugins: [expo()],
   database: drizzleAdapter(authDb, {
     provider: "pg",
     schema: schema
@@ -57,8 +59,8 @@ export const auth: any = betterAuth({
     httpOnly: true,
   },
   trustedOrigins: process.env.NODE_ENV === 'production'
-      ? ["https://girlsgotgame.app"]
-      : ["http://localhost:5173", "http://localhost:5174"],
+      ? ["https://girlsgotgame.app", "myapp://"]
+      : ["http://localhost:5173", "http://localhost:5174", "myapp://", "exp://192.168.1.8:8081/--"],
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
       // Auto-verify users who sign up through invite links
@@ -68,7 +70,7 @@ export const auth: any = betterAuth({
         
         if (newSession && newSession.user) {
           // Check if this is an invite signup by looking for invite code in referrer or callback URL
-          const referrer = ctx.request?.headers?.referer || '';
+          const referrer = ctx.request?.headers?.get('referer') || '';
           const inviteCode = referrer.includes('invite=') ? 
             referrer.split('invite=')[1]?.split('&')[0] : null;
           
@@ -140,8 +142,8 @@ export const auth: any = betterAuth({
             name: user.name,
             provider: provider,
             registrationTime: new Date().toISOString(),
-            userAgent: ctx.request?.headers?.["user-agent"] || "unknown",
-            ip: ctx.request?.headers?.["x-forwarded-for"] || ctx.request?.headers?.["x-real-ip"] || "unknown"
+            userAgent: ctx.request?.headers?.get("user-agent") || "unknown",
+            ip: ctx.request?.headers?.get("x-forwarded-for") || ctx.request?.headers?.get("x-real-ip") || "unknown"
           });
 
           console.log('🎉 New user registered and logged to Sentry:', { id: user.id, email: user.email, provider });

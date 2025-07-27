@@ -41,6 +41,11 @@ class ApiClient {
         return { error: errorData.error || `HTTP ${response.status}` };
       }
 
+      // Handle 204 No Content responses (successful DELETE operations)
+      if (response.status === 204) {
+        return { data: null as T };
+      }
+
       const data = await response.json();
       return { data };
     } catch (error) {
@@ -309,6 +314,97 @@ class ApiClient {
     return this.request(`/profiles/admin/approve/${userId}`, {
       method: 'PATCH',
     });
+  }
+
+  // Games endpoints
+  async getGames() {
+    return this.request('/games');
+  }
+
+  async createGame(teamName: string, isHome: boolean, opponentTeam: string, gameDate: string) {
+    return this.request('/games', {
+      method: 'POST',
+      body: JSON.stringify({ teamName, isHome, opponentTeam, gameDate }),
+    });
+  }
+
+  async updateGameScore(gameId: string, homeScore: number, awayScore: number) {
+    return this.request(`/games/${gameId}/score`, {
+      method: 'PATCH',
+      body: JSON.stringify({ homeScore, awayScore }),
+    });
+  }
+
+  async deleteGame(gameId: string) {
+    return this.request(`/games/${gameId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getGameDetails(gameId: string) {
+    return this.request(`/games/${gameId}`);
+  }
+
+  async addGameComment(gameId: string, content: string) {
+    return this.request(`/games/${gameId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    });
+  }
+
+  async updateGameStatus(gameId: string, status: string, notes?: string) {
+    return this.request(`/games/${gameId}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, notes }),
+    });
+  }
+
+  async shareGameToFeed(gameId: string) {
+    return this.request(`/games/${gameId}/share-to-feed`, {
+      method: 'POST',
+    });
+  }
+
+  // Game Players endpoints
+  async getGamePlayers(gameId: string) {
+    return this.request(`/games/${gameId}/players`);
+  }
+
+  async addRegisteredPlayerToGame(gameId: string, userId: string, jerseyNumber?: number, isStarter?: boolean) {
+    return this.request(`/games/${gameId}/players`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, jerseyNumber, isStarter }),
+    });
+  }
+
+  async addManualPlayerToGame(gameId: string, name: string, jerseyNumber?: number, isStarter?: boolean, notes?: string) {
+    return this.request(`/games/${gameId}/manual-players`, {
+      method: 'POST',
+      body: JSON.stringify({ name, jerseyNumber, isStarter, notes }),
+    });
+  }
+
+  async searchManualPlayers(query: string) {
+    return this.request(`/games/manual-players/search?q=${encodeURIComponent(query)}`);
+  }
+
+  // Game Stats endpoints
+  async addPlayerStat(gameId: string, playerId: string, statType: string, value?: number, quarter?: number, timeMinute?: number) {
+    return this.request(`/games/${gameId}/players/${playerId}/stats`, {
+      method: 'POST',
+      body: JSON.stringify({ statType, value, quarter, timeMinute }),
+    });
+  }
+
+  async removePlayerStat(gameId: string, statId: string) {
+    return this.request(`/games/${gameId}/stats/${statId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Game Activities endpoint
+  async getGameActivities(gameId: string) {
+    return this.request(`/games/${gameId}/activities`);
   }
 }
 

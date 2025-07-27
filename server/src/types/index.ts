@@ -58,6 +58,7 @@ export const postSchema = z.object({
   userId: z.string().uuid(),
   content: z.string(),
   imageUrl: z.string().url().nullable(),
+  mediaId: z.string().uuid().nullable(),
   workoutId: z.string().uuid().nullable(),
   createdAt: z.string(),
 });
@@ -65,12 +66,14 @@ export const postSchema = z.object({
 export const createPostSchema = z.object({
   content: z.string().min(1),
   imageUrl: z.string().url().optional(),
+  mediaId: z.string().uuid().optional(),
   workoutId: z.string().uuid().optional(),
 });
 
 export const updatePostSchema = z.object({
   content: z.string().min(1).optional(),
   imageUrl: z.string().url().optional(),
+  mediaId: z.string().uuid().optional(),
 });
 
 // Like schemas

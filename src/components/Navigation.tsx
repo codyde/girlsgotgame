@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X, UserPlus } from 'lucide-react'
+import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X, UserPlus, Calendar, Image } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/logo.png'
@@ -25,8 +25,10 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
   const tabs = isVerified ? [
     { id: 'feed', label: 'Feed', icon: Home },
     { id: 'training', label: 'Training', icon: Trophy },
+    { id: 'games', label: 'Games', icon: Calendar },
     { id: 'chat', label: 'Chat', icon: MessageCircle },
     { id: 'team', label: 'Team', icon: Users },
+    { id: 'media', label: 'Media', icon: Image },
     { id: 'profile', label: 'Profile', icon: UserIcon },
   ] : [
     { id: 'feed', label: 'Feed', icon: Home },
