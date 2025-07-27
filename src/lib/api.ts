@@ -310,6 +310,14 @@ class ApiClient {
       method: 'PATCH',
     });
   }
+
+  // Add points to a player
+  async addPointsToPlayer(userId: string, points: number, reason?: string) {
+    return this.request(`/profiles/admin/${userId}/add-points`, {
+      method: 'PATCH',
+      body: JSON.stringify({ points, reason }),
+    });
+  }
 }
 
 // Export singleton instance

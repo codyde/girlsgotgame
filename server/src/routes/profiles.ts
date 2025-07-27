@@ -3,7 +3,7 @@ import { eq, desc, and } from 'drizzle-orm';
 import { db } from '../db';
 import { user, parentChildRelations } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
-import { createProfileSchema, updateProfileSchema } from '../types';
+import { createProfileSchema, updateProfileSchema, addPointsSchema } from '../types';
 
 const router = Router();
 
@@ -426,6 +426,62 @@ router.patch('/admin/approve/:userId', requireAuth, async (req: AuthenticatedReq
     res.json({ success: true, message: 'User approved successfully' });
   } catch (error) {
     console.error('Error approving user:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Admin: Add points to a player
+router.patch('/admin/:userId/add-points', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    // Basic admin check
+    if (req.user?.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { userId } = req.params;
+    const validatedData = addPointsSchema.parse(req.body);
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // Get current user to check if they exist and get current points
+    const currentUser = await db.query.user.findFirst({
+      where: eq(user.id, userId)
+    });
+
+    if (!currentUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Update user's total points by adding the new points
+    const [updatedUser] = await db
+      .update(user)
+      .set({
+        totalPoints: (currentUser.totalPoints || 0) + validatedData.points,
+        updatedAt: new Date()
+      })
+      .where(eq(user.id, userId))
+      .returning({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        totalPoints: user.totalPoints,
+        updatedAt: user.updatedAt
+      });
+
+    res.json({
+      success: true,
+      message: `Successfully added ${validatedData.points} points to ${updatedUser.name || updatedUser.email}`,
+      user: updatedUser,
+      pointsAdded: validatedData.points,
+      reason: validatedData.reason || 'Manual adjustment by admin'
+    });
+  } catch (error) {
+    console.error('Error adding points to user:', error);
+    if (error instanceof Error && error.name === 'ZodError') {
+      return res.status(400).json({ error: 'Invalid data', details: error.message });
+    }
     res.status(500).json({ error: 'Internal server error' });
   }
 });

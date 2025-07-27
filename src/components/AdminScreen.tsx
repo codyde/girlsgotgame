@@ -20,7 +20,7 @@ export function AdminScreen() {
   const [selectedTeam, setSelectedTeam] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'unverified'>('workouts')
+  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'unverified' | 'players'>('workouts')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
   const [showCreateTeam, setShowCreateTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
@@ -28,6 +28,9 @@ export function AdminScreen() {
   const [showAddRelationship, setShowAddRelationship] = useState(false)
   const [selectedParent, setSelectedParent] = useState('')
   const [selectedChild, setSelectedChild] = useState('')
+  const [showAddPoints, setShowAddPoints] = useState<string | null>(null)
+  const [pointsToAdd, setPointsToAdd] = useState('')
+  const [pointsReason, setPointsReason] = useState('')
   const fetchingData = useRef(false)
 
   // Check if user is admin
@@ -128,6 +131,26 @@ export function AdminScreen() {
       refreshWorkouts() // Only refresh workouts
     } catch (error: unknown) {
       toast.error('Error deleting workout: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const addPointsToPlayer = async (userId: string, points: number, reason?: string) => {
+    try {
+      const { data, error } = await api.addPointsToPlayer(userId, points, reason)
+      if (error) throw new Error(error)
+
+      toast.success(data?.message || `Successfully added ${points} points!`)
+      
+      // Refresh both profiles and workouts to ensure UI is updated
+      const profilesPromise = api.getAllProfiles()
+      const workoutsPromise = api.getAllWorkouts()
+      
+      const [profilesResult, workoutsResult] = await Promise.all([profilesPromise, workoutsPromise])
+      
+      if (profilesResult.data) setProfiles(profilesResult.data)
+      if (workoutsResult.data) setWorkouts(workoutsResult.data)
+    } catch (error: unknown) {
+      toast.error('Error adding points: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -412,6 +435,16 @@ export function AdminScreen() {
             }`}
           >
             Unverified Users
+          </button>
+          <button
+            onClick={() => setCurrentTab('players')}
+            className={`px-6 py-3 font-medium font-body transition-colors ${
+              currentTab === 'players'
+                ? 'text-primary-600 border-b-2 border-primary-600' 
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            Manage Players
           </button>
         </div>
       </div>
@@ -895,6 +928,72 @@ export function AdminScreen() {
             </div>
           )}
         </div>
+      ) : currentTab === 'players' ? (
+        /* Player Management */
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="p-4 border-b border-gray-200">
+            <h3 className="text-lg font-semibold font-heading text-gray-900">Player Management</h3>
+            <p className="text-sm font-body text-gray-600">Add points to players and manage their scores</p>
+          </div>
+          
+          {profiles.filter(p => p.role === 'player').length === 0 ? (
+            <div className="p-8 text-center">
+              <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <p className="font-body text-gray-500">No players found</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {profiles.filter(p => p.role === 'player').map((player) => (
+                <div key={player.id} className="p-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      {/* Player Avatar */}
+                      {player.avatarUrl ? (
+                        <img
+                          src={player.avatarUrl}
+                          alt="Profile"
+                          className="w-12 h-12 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+                          {(player.name || player.email)?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      
+                      {/* Player Info */}
+                      <div>
+                        <div className="font-semibold font-body text-gray-900">
+                          {player.name || player.email.split('@')[0]}
+                        </div>
+                        <div className="text-sm font-body text-gray-500">{player.email}</div>
+                        <div className="flex items-center gap-2 text-sm font-body text-gray-600">
+                          <span className="font-semibold text-primary-600">{player.totalPoints || 0} points</span>
+                          {player.jerseyNumber && (
+                            <>
+                              <span>•</span>
+                              <span>#{player.jerseyNumber}</span>
+                            </>
+                          )}
+                          <span>•</span>
+                          <span>Joined {new Date(player.createdAt).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Add Points Button */}
+                    <button
+                      onClick={() => setShowAddPoints(player.id)}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Points
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       ) : (
         <>
           {/* User Filter */}
@@ -991,6 +1090,115 @@ export function AdminScreen() {
       )}
         </div>
       </div>
+
+      {/* Add Points Modal */}
+      {showAddPoints && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold font-heading text-gray-900">Add Points to Player</h3>
+                <button
+                  onClick={() => {
+                    setShowAddPoints(null)
+                    setPointsToAdd('')
+                    setPointsReason('')
+                  }}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              {(() => {
+                const player = profiles.find(p => p.id === showAddPoints)
+                return player ? (
+                  <div className="mb-4">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      {player.avatarUrl ? (
+                        <img
+                          src={player.avatarUrl}
+                          alt="Profile"
+                          className="w-10 h-10 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+                          {(player.name || player.email)?.[0]?.toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <div className="font-semibold font-body text-gray-900">
+                          {player.name || player.email.split('@')[0]}
+                        </div>
+                        <div className="text-sm font-body text-gray-600">
+                          Current: {player.totalPoints || 0} points
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : null
+              })()}
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium font-body text-gray-700 mb-1">
+                    Points to Add
+                  </label>
+                  <input
+                    type="number"
+                    value={pointsToAdd}
+                    onChange={(e) => setPointsToAdd(e.target.value)}
+                    placeholder="Enter points amount"
+                    min="1"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium font-body text-gray-700 mb-1">
+                    Reason (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={pointsReason}
+                    onChange={(e) => setPointsReason(e.target.value)}
+                    placeholder="e.g., Bonus for excellent performance"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => {
+                      const points = parseInt(pointsToAdd)
+                      if (points > 0 && showAddPoints) {
+                        addPointsToPlayer(showAddPoints, points, pointsReason || undefined)
+                        setShowAddPoints(null)
+                        setPointsToAdd('')
+                        setPointsReason('')
+                      }
+                    }}
+                    disabled={!pointsToAdd || parseInt(pointsToAdd) <= 0}
+                    className="flex-1 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    Add Points
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowAddPoints(null)
+                      setPointsToAdd('')
+                      setPointsReason('')
+                    }}
+                    className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-body"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
