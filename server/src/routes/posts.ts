@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import { posts, user, workouts, likes, comments, gameComments } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
@@ -51,7 +51,10 @@ router.get('/feed', async (req, res) => {
     });
 
     // For game posts, get game comment counts
-    const gamePostIds = feedPosts.filter(post => post.gameId).map(post => post.gameId);
+    const gamePostIds = feedPosts
+      .filter(post => post.gameId)
+      .map(post => post.gameId)
+      .filter(Boolean) as string[]; // Filter out any null/undefined values
     let gameCommentCounts: Record<string, number> = {};
     
     if (gamePostIds.length > 0) {
@@ -61,7 +64,7 @@ router.get('/feed', async (req, res) => {
           count: sql<number>`cast(count(*) as int)`
         })
         .from(gameComments)
-        .where(sql`${gameComments.gameId} = ANY(${gamePostIds})`)
+        .where(inArray(gameComments.gameId, gamePostIds))
         .groupBy(gameComments.gameId);
       
       gameCommentCounts = commentCountResults.reduce((acc, result) => {
