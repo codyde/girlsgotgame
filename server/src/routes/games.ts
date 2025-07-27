@@ -3,6 +3,7 @@ import { db } from '../db/index';
 import { games, gameComments, user as userTable, posts, gamePlayers, manualPlayers, gameStats, gameActivities } from '../db/schema';
 import { eq, asc, desc, like, or, and } from 'drizzle-orm';
 import { requireAuth } from '../middleware/auth';
+import { getSocketIO } from '../lib/socket';
 
 const router = express.Router();
 
@@ -85,6 +86,17 @@ router.patch('/:gameId/score', requireAuth, async (req, res) => {
 
     if (!updatedGame) {
       return res.status(404).json({ error: 'Game not found' });
+    }
+
+    // Emit live score update via websocket for manual score edits
+    const io = getSocketIO();
+    if (io) {
+      io.emit('game:score-updated', {
+        gameId,
+        homeScore,
+        awayScore,
+        isManualUpdate: true
+      });
     }
 
     res.json(updatedGame);
@@ -665,14 +677,126 @@ router.post('/:gameId/players/:playerId/stats', requireAuth, async (req, res) =>
       playerName = manualPlayer?.name || 'Unknown Player';
     }
 
+    // Auto-update game score for scoring stats
+    if (['2pt', '3pt', '1pt'].includes(statType)) {
+      // Get current game data
+      const [currentGame] = await db
+        .select()
+        .from(games)
+        .where(eq(games.id, gameId));
+
+      if (currentGame) {
+        // Calculate points to add based on stat type
+        let pointsToAdd = 0;
+        if (statType === '3pt') pointsToAdd = 3;
+        else if (statType === '2pt') pointsToAdd = 2;
+        else if (statType === '1pt') pointsToAdd = 1;
+
+        // Update the appropriate score (home or away based on team)
+        // Since we're tracking our team's stats, we add to home score if isHome=true, away score if isHome=false
+        const newHomeScore = currentGame.isHome 
+          ? (currentGame.homeScore || 0) + pointsToAdd
+          : currentGame.homeScore || 0;
+        const newAwayScore = !currentGame.isHome 
+          ? (currentGame.awayScore || 0) + pointsToAdd
+          : currentGame.awayScore || 0;
+
+        await db
+          .update(games)
+          .set({
+            homeScore: newHomeScore,
+            awayScore: newAwayScore,
+            updatedAt: new Date(),
+          })
+          .where(eq(games.id, gameId));
+
+        // Log score update activity
+        await db.insert(gameActivities).values({
+          gameId,
+          activityType: 'score_updated',
+          description: `Score updated: ${newHomeScore}-${newAwayScore} (${pointsToAdd} pts from ${playerName}'s ${statType})`,
+          metadata: JSON.stringify({ 
+            previousHomeScore: currentGame.homeScore,
+            previousAwayScore: currentGame.awayScore,
+            newHomeScore,
+            newAwayScore,
+            pointsAdded: pointsToAdd,
+            statType,
+            playerName 
+          }),
+          performedBy: user.id,
+        });
+
+        // Emit live score update via websocket
+        const io = getSocketIO();
+        if (io) {
+          io.emit('game:score-updated', {
+            gameId,
+            homeScore: newHomeScore,
+            awayScore: newAwayScore,
+            previousHomeScore: currentGame.homeScore,
+            previousAwayScore: currentGame.awayScore,
+            pointsAdded: pointsToAdd,
+            playerName,
+            statType
+          });
+        }
+      }
+    }
+
+    // Create engaging activity description
+    let activityDescription = '';
+    switch (statType) {
+      case '3pt':
+        activityDescription = `${playerName} sank a 3-pointer! 🎯`;
+        break;
+      case '2pt':
+        activityDescription = `${playerName} scored 2 points! 🏀`;
+        break;
+      case '1pt':
+        activityDescription = `${playerName} made a free throw! 🎯`;
+        break;
+      case 'steal':
+        activityDescription = `${playerName} stole the ball! 🔥`;
+        break;
+      case 'rebound':
+        activityDescription = `${playerName} grabbed a rebound! 💪`;
+        break;
+      default:
+        activityDescription = `${playerName} recorded a ${statType}`;
+    }
+
     // Log activity
     await db.insert(gameActivities).values({
       gameId,
       activityType: 'stat_added',
-      description: `Added ${statType} stat for ${playerName}`,
+      description: activityDescription,
       metadata: JSON.stringify({ statId: newStat.id, statType, value, playerName }),
       performedBy: user.id,
     });
+
+    // Emit live activity update via websocket
+    const io = getSocketIO();
+    if (io) {
+      io.emit('game:activity-added', {
+        gameId,
+        activity: {
+          id: 'temp-' + Date.now(), // temporary ID for optimistic updates
+          gameId,
+          activityType: 'stat_added',
+          description: activityDescription,
+          performedByUser: {
+            name: user.name,
+            email: user.email,
+          },
+          createdAt: new Date().toISOString(),
+        },
+        stat: {
+          ...newStat,
+          playerName
+        }
+      });
+    }
 
     res.status(201).json(newStat);
   } catch (error) {
@@ -726,19 +850,132 @@ router.delete('/:gameId/stats/:statId', requireAuth, async (req, res) => {
       playerName = gamePlayer.manual_players?.name || 'Unknown Player';
     }
 
+    // Auto-update game score for scoring stats (subtract points)
+    if (['2pt', '3pt', '1pt'].includes(stat.statType)) {
+      // Get current game data
+      const [currentGame] = await db
+        .select()
+        .from(games)
+        .where(eq(games.id, gameId));
+
+      if (currentGame) {
+        // Calculate points to subtract based on stat type
+        let pointsToSubtract = 0;
+        if (stat.statType === '3pt') pointsToSubtract = 3;
+        else if (stat.statType === '2pt') pointsToSubtract = 2;
+        else if (stat.statType === '1pt') pointsToSubtract = 1;
+
+        // Update the appropriate score (home or away based on team)
+        const newHomeScore = currentGame.isHome 
+          ? Math.max(0, (currentGame.homeScore || 0) - pointsToSubtract)
+          : currentGame.homeScore || 0;
+        const newAwayScore = !currentGame.isHome 
+          ? Math.max(0, (currentGame.awayScore || 0) - pointsToSubtract)
+          : currentGame.awayScore || 0;
+
+        await db
+          .update(games)
+          .set({
+            homeScore: newHomeScore,
+            awayScore: newAwayScore,
+            updatedAt: new Date(),
+          })
+          .where(eq(games.id, gameId));
+
+        // Log score update activity
+        await db.insert(gameActivities).values({
+          gameId,
+          activityType: 'score_updated',
+          description: `Score updated: ${newHomeScore}-${newAwayScore} (removed ${pointsToSubtract} pts from ${playerName}'s ${stat.statType})`,
+          metadata: JSON.stringify({ 
+            previousHomeScore: currentGame.homeScore,
+            previousAwayScore: currentGame.awayScore,
+            newHomeScore,
+            newAwayScore,
+            pointsSubtracted: pointsToSubtract,
+            statType: stat.statType,
+            playerName 
+          }),
+          performedBy: user.id,
+        });
+
+        // Emit live score update via websocket
+        const io = getSocketIO();
+        if (io) {
+          io.emit('game:score-updated', {
+            gameId,
+            homeScore: newHomeScore,
+            awayScore: newAwayScore,
+            previousHomeScore: currentGame.homeScore,
+            previousAwayScore: currentGame.awayScore,
+            pointsSubtracted: pointsToSubtract,
+            playerName,
+            statType: stat.statType
+          });
+        }
+      }
+    }
+
     // Delete the stat
     await db
       .delete(gameStats)
       .where(eq(gameStats.id, statId));
 
+    // Create engaging removal description
+    let removalDescription = '';
+    switch (stat.statType) {
+      case '3pt':
+        removalDescription = `${playerName}'s 3-pointer was corrected`;
+        break;
+      case '2pt':
+        removalDescription = `${playerName}'s 2-point shot was corrected`;
+        break;
+      case '1pt':
+        removalDescription = `${playerName}'s free throw was corrected`;
+        break;
+      case 'steal':
+        removalDescription = `${playerName}'s steal was corrected`;
+        break;
+      case 'rebound':
+        removalDescription = `${playerName}'s rebound was corrected`;
+        break;
+      default:
+        removalDescription = `${playerName}'s ${stat.statType} was corrected`;
+    }
+
     // Log activity
     await db.insert(gameActivities).values({
       gameId,
       activityType: 'stat_removed',
-      description: `Removed ${stat.statType} stat for ${playerName}`,
+      description: removalDescription,
       metadata: JSON.stringify({ statType: stat.statType, value: stat.value, playerName }),
       performedBy: user.id,
     });
+
+    // Emit live activity update via websocket
+    const io = getSocketIO();
+    if (io) {
+      io.emit('game:activity-added', {
+        gameId,
+        activity: {
+          id: 'temp-' + Date.now(), // temporary ID for optimistic updates
+          gameId,
+          activityType: 'stat_removed',
+          description: removalDescription,
+          performedByUser: {
+            name: user.name,
+            email: user.email,
+          },
+          createdAt: new Date().toISOString(),
+        },
+        statRemoved: {
+          id: statId,
+          statType: stat.statType,
+          value: stat.value,
+          playerName
+        }
+      });
+    }
 
     res.json({ message: 'Stat removed successfully' });
   } catch (error) {

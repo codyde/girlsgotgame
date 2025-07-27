@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { ArrowLeft, Clock, MapPin, Users, Trophy, MessageCircle, Send, Edit2, Save, X, Share, Plus, UserPlus, Star, Activity } from 'lucide-react'
+import { ArrowLeft, Clock, MapPin, Users, Trophy, MessageCircle, Send, Edit2, Save, X, Share, Plus, UserPlus, Star, Activity, ChevronDown, ChevronUp, Zap } from 'lucide-react'
 import { Game, GameComment, GamePlayer, User, ManualPlayer, GameActivity } from '../types'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
+import { useSocket } from '../hooks/useSocket'
 import toast from 'react-hot-toast'
 
 interface GameDetailsScreenProps {
@@ -12,6 +13,7 @@ interface GameDetailsScreenProps {
 
 export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const { user, profile } = useAuth()
+  const { socket, isConnected } = useSocket()
   const [game, setGame] = useState<Game | null>(null)
   const [comments, setComments] = useState<GameComment[]>([])
   const [players, setPlayers] = useState<GamePlayer[]>([])
@@ -31,6 +33,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [selectedUserId, setSelectedUserId] = useState('')
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null)
   const [showActivities, setShowActivities] = useState(false)
+  const [showLiveActivity, setShowLiveActivity] = useState(false)
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
@@ -41,6 +44,50 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
       fetchAllUsers()
     }
   }, [gameId, isAdmin])
+
+  // Websocket listeners for live updates
+  useEffect(() => {
+    if (!socket || !isConnected) return
+
+    // Listen for score updates
+    const handleScoreUpdate = (data: any) => {
+      if (data.gameId === gameId) {
+        setGame(prev => prev ? {
+          ...prev,
+          homeScore: data.homeScore,
+          awayScore: data.awayScore
+        } : null)
+        
+        // Update the edit fields if they're being shown
+        setEditHomeScore(data.homeScore.toString())
+        setEditAwayScore(data.awayScore.toString())
+        
+        // Show a toast notification
+        toast.success(`Score updated: ${data.homeScore}-${data.awayScore}`)
+      }
+    }
+
+    // Listen for activity updates (stats added/removed)
+    const handleActivityUpdate = (data: any) => {
+      if (data.gameId === gameId) {
+        // Add the new activity to the list
+        setActivities(prev => [data.activity, ...prev])
+        
+        // If it's a stat being added/removed, refresh the players to get updated stats
+        if (data.stat || data.statRemoved) {
+          fetchGameDetails()
+        }
+      }
+    }
+
+    socket.on('game:score-updated', handleScoreUpdate)
+    socket.on('game:activity-added', handleActivityUpdate)
+
+    return () => {
+      socket.off('game:score-updated', handleScoreUpdate)
+      socket.off('game:activity-added', handleActivityUpdate)
+    }
+  }, [socket, isConnected, gameId])
 
   const fetchGameDetails = async () => {
     try {
@@ -222,6 +269,24 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
       hour: '2-digit',
       minute: '2-digit'
     })
+  }
+
+  const formatActivityTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000)
+    
+    if (diffInSeconds < 60) {
+      return 'just now'
+    } else if (diffInSeconds < 3600) {
+      const minutes = Math.floor(diffInSeconds / 60)
+      return `${minutes}m ago`
+    } else {
+      return date.toLocaleString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit'
+      })
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -494,6 +559,73 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Live Game Activity Accordion */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <button
+              onClick={() => setShowLiveActivity(!showLiveActivity)}
+              className="w-full p-4 flex items-center justify-between hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <Zap className="w-5 h-5 text-amber-500" />
+                <div className="text-left">
+                  <h3 className="text-lg font-semibold font-heading text-gray-900">Live Game Activity</h3>
+                  <p className="text-sm font-body text-gray-600">Follow the action as it happens</p>
+                </div>
+                {activities.length > 0 && (
+                  <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-1 rounded-full">
+                    {activities.length}
+                  </span>
+                )}
+              </div>
+              {showLiveActivity ? (
+                <ChevronUp className="w-5 h-5 text-gray-400" />
+              ) : (
+                <ChevronDown className="w-5 h-5 text-gray-400" />
+              )}
+            </button>
+            
+            {showLiveActivity && (
+              <div className="border-t border-gray-200 bg-gray-50">
+                <div className="p-4">
+                  {activities.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Activity className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                      <p className="font-body text-gray-500">Game activity will appear here as it happens</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {activities.slice(0, 20).map((activity, index) => (
+                        <div 
+                          key={activity.id} 
+                          className={`flex items-start gap-3 p-3 rounded-lg transition-all ${
+                            index === 0 ? 'bg-amber-50 border border-amber-200 animate-pulse' : 'bg-white border border-gray-100'
+                          }`}
+                        >
+                          <div className="w-2 h-2 bg-amber-500 rounded-full mt-2 flex-shrink-0"></div>
+                          <div className="flex-1">
+                            <p className="text-gray-900 font-body font-medium">
+                              {activity.description}
+                            </p>
+                            <p className="text-xs text-gray-500 font-body mt-1">
+                              {formatActivityTime(activity.createdAt)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  
+                  {isConnected && (
+                    <div className="mt-4 flex items-center gap-2 text-xs text-green-600 font-body">
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                      <span>Live updates active</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Players Section */}

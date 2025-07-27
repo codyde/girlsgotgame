@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { User as UserIcon, Trophy, Calendar, Target, Clock, Award } from 'lucide-react'
+import { User as UserIcon, Trophy, Calendar, Target, Clock, Award, Shield } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { User, Workout } from '../types'
@@ -12,27 +12,33 @@ interface WorkoutWithUser extends Workout {
 
 export function ParentDashboard() {
   const { user, profile, updateProfile } = useAuth()
-  const [players, setPlayers] = useState<User[]>([])
+  const [children, setChildren] = useState<User[]>([])
   const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
 
   useEffect(() => {
-    fetchPlayers()
+    fetchMyChildren()
     if (user?.childId) {
       setSelectedChild(user.childId)
       fetchChildWorkouts(user.childId)
     }
   }, [user])
 
-  const fetchPlayers = async () => {
+  const fetchMyChildren = async () => {
     try {
-      const { data, error } = await api.getPlayerProfiles()
+      const { data, error } = await api.getMyChildren()
 
       if (error) throw new Error(error)
-      setPlayers(data || [])
+      setChildren(data || [])
+      
+      // If parent has only one child, auto-select them
+      if (data && data.length === 1 && !selectedChild) {
+        setSelectedChild(data[0].id)
+        fetchChildWorkouts(data[0].id)
+      }
     } catch (error: unknown) {
-      toast.error('Error loading players: ' + (error instanceof Error ? error.message : String(error)))
+      toast.error('Error loading children: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
     }
@@ -49,15 +55,9 @@ export function ParentDashboard() {
     }
   }
 
-  const assignChild = async (childId: string) => {
-    try {
-      await updateProfile({ child_id: childId })
-      setSelectedChild(childId)
-      fetchChildWorkouts(childId)
-      toast.success('Child assigned successfully!')
-    } catch {
-      // Error handling is done in the hook
-    }
+  const selectChild = async (childId: string) => {
+    setSelectedChild(childId)
+    fetchChildWorkouts(childId)
   }
 
   const formatTime = (dateString: string) => {
@@ -69,7 +69,7 @@ export function ParentDashboard() {
     })
   }
 
-  const selectedChildProfile = players.find(p => p.id === selectedChild)
+  const selectedChildProfile = children.find(p => p.id === selectedChild)
 
   if (loading) {
     return (
@@ -105,27 +105,36 @@ export function ParentDashboard() {
             Select Your Child
           </h3>
           
-          <div className="space-y-3">
-            <select
-              value={selectedChild}
-              onChange={(e) => {
-                const childId = e.target.value
-                if (childId) {
-                  assignChild(childId)
-                }
-              }}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-            >
-              <option value="">Select a player...</option>
-              {players.map((player) => (
-                <option key={player.id} value={player.id}>
-                  {player.name || player.email.split('@')[0]} ({player.totalPoints || 0} points)
-                </option>
-              ))}
-            </select>
+          {children.length === 0 ? (
+            <div className="text-center py-6">
+              <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+              <p className="text-gray-500 font-body">No children assigned to your account yet.</p>
+              <p className="text-sm text-gray-400 font-body mt-1">Contact an admin to link your children to your parent account.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <select
+                value={selectedChild}
+                onChange={(e) => {
+                  const childId = e.target.value
+                  if (childId) {
+                    selectChild(childId)
+                  }
+                }}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
+              >
+                <option value="">Select a child...</option>
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
             
-            {profile?.childId && selectedChildProfile && (
-              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200">
+            {selectedChildProfile && (
+              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 mt-3">
                 {selectedChildProfile.avatarUrl ? (
                   <img
                     src={selectedChildProfile.avatarUrl}
@@ -139,13 +148,12 @@ export function ParentDashboard() {
                 )}
                 <div>
                   <p className="font-semibold font-body text-green-800">
-                    Currently tracking: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
+                    Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
                   </p>
                   <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
                 </div>
               </div>
             )}
-          </div>
         </div>
 
         {/* Child Stats */}

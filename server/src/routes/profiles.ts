@@ -201,6 +201,43 @@ router.get('/players', async (req, res) => {
   }
 });
 
+// Get parent's children data
+router.get('/my-children', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parentId = req.user!.id;
+
+    // Get children from new parent-child relationships table
+    const relationships = await db
+      .select()
+      .from(parentChildRelations)
+      .where(eq(parentChildRelations.parentId, parentId));
+
+    if (relationships.length === 0) {
+      return res.json([]);
+    }
+
+    // Get detailed info for each child
+    const childIds = relationships.map(rel => rel.childId);
+    const children = await db.query.user.findMany({
+      where: (user, { inArray }) => inArray(user.id, childIds),
+      columns: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        totalPoints: true,
+        jerseyNumber: true,
+        createdAt: true
+      }
+    });
+
+    res.json(children);
+  } catch (error) {
+    console.error('Get my children error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // Admin: Get all profiles
 router.get('/admin/all', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {

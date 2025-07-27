@@ -95,6 +95,10 @@ class ApiClient {
     return this.request('/profiles/players');
   }
 
+  async getMyChildren() {
+    return this.request('/profiles/my-children');
+  }
+
   async getProfileById(id: string) {
     return this.request(`/profiles/${id}`);
   }
