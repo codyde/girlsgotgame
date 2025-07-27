@@ -8,6 +8,47 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, experimental_transcribe as transcribe, generateObject } from 'ai';
 import multer from 'multer';
 
+// Polyfill File constructor for Node.js transcription support
+if (!globalThis.File) {
+  globalThis.File = class File {
+    constructor(fileBits, fileName, options = {}) {
+      this.name = fileName;
+      this.type = options.type || '';
+      this.size = 0;
+      this.lastModified = options.lastModified || Date.now();
+      
+      // Handle Buffer input (from multer)
+      if (Buffer.isBuffer(fileBits)) {
+        this.size = fileBits.length;
+        this._buffer = fileBits;
+      } else if (Array.isArray(fileBits)) {
+        // Handle array of Buffers/Uint8Arrays
+        this._buffer = Buffer.concat(fileBits);
+        this.size = this._buffer.length;
+      } else {
+        this._buffer = Buffer.from(fileBits);
+        this.size = this._buffer.length;
+      }
+    }
+    
+    async arrayBuffer() {
+      return this._buffer.buffer.slice(
+        this._buffer.byteOffset,
+        this._buffer.byteOffset + this._buffer.byteLength
+      );
+    }
+    
+    stream() {
+      const { Readable } = require('stream');
+      return Readable.from(this._buffer);
+    }
+    
+    async text() {
+      return this._buffer.toString();
+    }
+  };
+}
+
 // Configure OpenAI
 const openai = createOpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -820,10 +861,16 @@ router.post('/transcribe', requireAuth, upload.single('audio'), async (req: Auth
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    // Use Vercel AI SDK transcribe with proper Node.js Buffer handling
+    // Use Vercel AI SDK transcribe with File polyfill
+    const audioFile = new File(
+      [req.file.buffer], 
+      req.file.originalname || 'audio.wav',
+      { type: req.file.mimetype || 'audio/wav' }
+    );
+
     const { text } = await transcribe({
       model: openai.transcription('whisper-1'),
-      audio: req.file.buffer, // Pass Buffer directly (not Uint8Array)
+      audio: audioFile,
       providerOptions: {
         openai: {
           language: 'en',
