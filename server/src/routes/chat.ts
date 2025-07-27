@@ -820,10 +820,10 @@ router.post('/transcribe', requireAuth, upload.single('audio'), async (req: Auth
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    // Use OpenAI's transcription model with Vercel AI SDK
+    // Use Vercel AI SDK transcribe with proper Node.js Buffer handling
     const { text } = await transcribe({
       model: openai.transcription('whisper-1'),
-      audio: new Uint8Array(req.file.buffer),
+      audio: req.file.buffer, // Pass Buffer directly (not Uint8Array)
       providerOptions: {
         openai: {
           language: 'en',
