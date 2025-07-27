@@ -262,7 +262,7 @@ class ApiClient {
   }
 
   async getTeamMembers(teamId: string) {
-    return this.request(`/chat/admin/teams/${teamId}/members`);
+    return this.request(`/chat/teams/${teamId}/members`);
   }
 
   async addTeamMember(teamId: string, userId: string, role: string = 'member') {
@@ -406,9 +406,89 @@ class ApiClient {
     });
   }
 
+  // Get games for a specific user with their stats
+  async getUserGames(userId: string) {
+    return this.request(`/games/user/${userId}`);
+  }
+
   // Game Activities endpoint
   async getGameActivities(gameId: string) {
     return this.request(`/games/${gameId}/activities`);
+  }
+
+  // AI Chat endpoint with tool calling and streaming support
+  async sendAIMessage(message: string, onChunk?: (chunk: string) => void, conversationId?: string): Promise<{ error?: string; data?: any }> {
+    try {
+      const url = `${this.baseUrl}/chat/ai`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({ message, conversationId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return { error: errorData.error || `HTTP ${response.status}` };
+      }
+
+      // Check if response is JSON (tool calling) or streaming
+      const contentType = response.headers.get('content-type');
+      
+      if (contentType && contentType.includes('application/json')) {
+        // Handle JSON response (tool calling)
+        const data = await response.json();
+        return { data, error: undefined };
+      } else {
+        // Handle streaming response
+        if (!onChunk) {
+          const text = await response.text();
+          return { data: { response: text }, error: undefined };
+        }
+
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+
+        if (!reader) {
+          return { error: 'Failed to get response reader' };
+        }
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            onChunk(chunk);
+          }
+          return { error: undefined };
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    } catch (error) {
+      console.error('AI chat error:', error);
+      return { error: 'Network error' };
+    }
+  }
+
+  // Audio transcription endpoint
+  async transcribeAudio(audioBlob: Blob) {
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioBlob, 'recording.wav');
+
+      return this.request('/chat/transcribe', {
+        method: 'POST',
+        body: formData,
+        headers: {}, // Remove Content-Type to let browser set it with boundary
+      });
+    } catch (error) {
+      console.error('Transcription error:', error);
+      return { error: 'Network error' };
+    }
   }
 }
 

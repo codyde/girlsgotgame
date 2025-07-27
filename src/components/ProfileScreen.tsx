@@ -11,13 +11,7 @@ export function ProfileScreen() {
   const { profile, updateProfile, user } = useAuth()
   const { currentTheme, setTheme, themes } = useTheme()
   const [isEditing, setIsEditing] = useState(false)
-  const [isEditingChild, setIsEditingChild] = useState(false)
   const [name, setName] = useState('')
-  const [players, setPlayers] = useState<User[]>([])
-  const [selectedChild, setSelectedChild] = useState('')
-  const [manualEmail, setManualEmail] = useState('')
-  const [showManualEntry, setShowManualEntry] = useState(false)
-  const [loadingPlayers, setLoadingPlayers] = useState(false)
 
   const [isUploading, setIsUploading] = useState(false)
 
@@ -25,65 +19,9 @@ export function ProfileScreen() {
   useEffect(() => {
     if (profile) {
       setName(profile.name || '')
-      setSelectedChild(profile.childId || '')
     }
   }, [profile])
 
-  const fetchPlayers = async () => {
-    try {
-      setLoadingPlayers(true)
-      // Note: We'll need to add this endpoint to the API if we want to filter by role
-      // For now, we'll get the leaderboard which contains players
-      const { data, error } = await api.getLeaderboard()
-
-      if (error) throw new Error(error)
-      setPlayers(data || [])
-    } catch (error: unknown) {
-      toast.error('Error loading players: ' + (error instanceof Error ? error.message : String(error)))
-    } finally {
-      setLoadingPlayers(false)
-    }
-  }
-
-  const handleEditChild = () => {
-    setIsEditingChild(true)
-    setSelectedChild(profile?.childId || '')
-    setManualEmail('')
-    setShowManualEntry(false)
-    fetchPlayers()
-  }
-
-  const handleSaveChild = async () => {
-    try {
-      let childId = null
-      
-      if (selectedChild) {
-        childId = selectedChild
-      } else if (manualEmail.trim()) {
-        // For now, we'll search through the players list
-        // In a real app, you'd want a dedicated endpoint for this
-        const player = players.find(p => p.email.toLowerCase() === manualEmail.trim().toLowerCase())
-        
-        if (!player) {
-          toast.error('Player not found with that email address')
-          return
-        }
-        
-        childId = player.id
-      }
-      
-      await updateProfile({ childId: childId })
-      setIsEditingChild(false)
-      
-      if (childId) {
-        toast.success('Child assigned successfully!')
-      } else {
-        toast.success('Child assignment removed')
-      }
-    } catch {
-      // Error handling is done in the hook
-    }
-  }
 
   const handleSave = async () => {
     try {
@@ -242,117 +180,20 @@ export function ProfileScreen() {
             )}
           </div>
 
-          {/* Parent-specific child assignment */}
+          {/* Parent information */}
           {profile.role === 'parent' && (
-            <div
-              className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6"
-            >
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
               <h3 className="font-semibold font-heading text-gray-900 mb-3 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-500" />
-                Child Assignment
+                Parent Account
               </h3>
-              
-              {isEditingChild ? (
-                <div className="space-y-4">
-                  {loadingPlayers ? (
-                    <div className="text-center py-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500 mx-auto"></div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Existing Players */}
-                      {players.length > 0 && (
-                        <div>
-                          <label className="block text-sm font-medium font-body text-gray-700 mb-2">
-                            Select from registered players:
-                          </label>
-                          <select
-                            value={selectedChild}
-                            onChange={(e) => {
-                              setSelectedChild(e.target.value)
-                              setManualEmail('')
-                              setShowManualEntry(false)
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-                          >
-                            <option value="">No child selected</option>
-                            {players.map((player) => (
-                              <option key={player.id} value={player.id}>
-                                {player.name || player.email.split('@')[0]} ({player.totalPoints || 0} points)
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-
-                      {/* Manual Entry */}
-                      <div className="border-t border-gray-200 pt-4">
-                        <button
-                          onClick={() => {
-                            setShowManualEntry(!showManualEntry)
-                            setSelectedChild('')
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-700 font-medium font-body"
-                        >
-                          {showManualEntry ? 'Hide manual entry' : 'Enter email manually'}
-                        </button>
-                        
-                        {showManualEntry && (
-                          <div className="mt-2">
-                            <input
-                              type="email"
-                              value={manualEmail}
-                              onChange={(e) => setManualEmail(e.target.value)}
-                              placeholder="child@email.com"
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
-                  
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setIsEditingChild(false)}
-                      className="flex-1 bg-gray-100 text-gray-700 py-2 rounded-lg font-medium font-body hover:bg-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveChild}
-                      className="flex-1 bg-gradient-to-r from-primary-500 to-primary-600 text-white py-2 rounded-lg font-medium font-body hover:shadow-lg transition-all"
-                    >
-                      Save
-                    </button>
-                  </div>
+              <div className="flex items-center gap-3">
+                <UserIcon className="w-8 h-8 text-gray-400" />
+                <div>
+                  <p className="font-medium font-body text-gray-900">Parent Dashboard Available</p>
+                  <p className="text-sm font-body text-gray-600">Access your children's progress through the dashboard</p>
                 </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <UserIcon className="w-8 h-8 text-gray-400" />
-                    <div>
-                      {profile.childId ? (
-                        <>
-                          <p className="font-medium font-body text-gray-900">Child assigned</p>
-                          <p className="text-sm font-body text-gray-600">Tracking a player's progress</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-medium font-body text-gray-900">No child assigned</p>
-                          <p className="text-sm font-body text-gray-600">Select a player to track</p>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleEditChild}
-                    className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg font-medium font-body hover:bg-blue-100 transition-colors"
-                  >
-                    {profile.childId ? 'Change' : 'Assign'}
-                  </button>
-                </div>
-              )}
+              </div>
             </div>
           )}
 

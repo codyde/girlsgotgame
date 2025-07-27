@@ -35,15 +35,20 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [showActivities, setShowActivities] = useState(false)
   const [showLiveActivity, setShowLiveActivity] = useState(false)
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
+  const [myChildren, setMyChildren] = useState<User[]>([])
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isParent = profile?.role === 'parent'
 
   useEffect(() => {
     fetchGameDetails()
     if (isAdmin) {
       fetchAllUsers()
     }
-  }, [gameId, isAdmin])
+    if (isParent) {
+      fetchMyChildren()
+    }
+  }, [gameId, isAdmin, isParent])
 
   // Websocket listeners for live updates
   useEffect(() => {
@@ -124,6 +129,16 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
       setAllUsers(data || [])
     } catch (error) {
       console.error('Error fetching users:', error)
+    }
+  }
+
+  const fetchMyChildren = async () => {
+    try {
+      const { data, error } = await api.getMyChildren()
+      if (error) throw new Error(error)
+      setMyChildren(data || [])
+    } catch (error) {
+      console.error('Error fetching children:', error)
     }
   }
 
@@ -348,6 +363,15 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const homeTeamName = isHomeTeam ? game.teamName : game.opponentTeam
   const awayTeamName = isHomeTeam ? game.opponentTeam : game.teamName
   const isCompleted = game.homeScore !== null && game.awayScore !== null
+
+  // Filter players based on user role
+  const visiblePlayers = isParent 
+    ? players.filter(player => {
+        // For parents, only show their children
+        const myChildIds = myChildren.map(child => child.id)
+        return player.userId && myChildIds.includes(player.userId)
+      })
+    : players // Admins see all players
 
   return (
     <div className="h-full flex flex-col">
@@ -629,14 +653,14 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
           </div>
 
           {/* Players Section */}
-          {isAdmin && (
+          {(isAdmin || isParent) && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-100">
               <div className="p-4 border-b border-gray-200">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Users className="w-5 h-5 text-primary-600" />
                     <h3 className="text-lg font-semibold font-heading text-gray-900">Players</h3>
-                    <span className="text-sm text-gray-500 font-body">({players.length})</span>
+                    <span className="text-sm text-gray-500 font-body">({visiblePlayers.length})</span>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -646,27 +670,31 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                       <Activity className="w-4 h-4" />
                       Activity Log
                     </button>
-                    <button
-                      onClick={() => setShowAddPlayer(true)}
-                      className="flex items-center gap-2 px-3 py-1 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
-                    >
-                      <Plus className="w-4 h-4" />
-                      Add Player
-                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => setShowAddPlayer(true)}
+                        className="flex items-center gap-2 px-3 py-1 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Player
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
 
               {/* Players List */}
               <div className="p-4">
-                {players.length === 0 ? (
+                {visiblePlayers.length === 0 ? (
                   <div className="text-center py-8">
                     <Users className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="font-body text-gray-500">No players added yet.</p>
+                    <p className="font-body text-gray-500">
+                      {isParent ? "Your child is not in this game." : "No players added yet."}
+                    </p>
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {players.map((player) => {
+                    {visiblePlayers.map((player) => {
                       const displayName = player.user?.name || player.manualPlayer?.name || 'Unknown Player'
                       const jerseyNumber = player.jerseyNumber || player.user?.jerseyNumber || player.manualPlayer?.jerseyNumber
                       const stats = player.stats || []
