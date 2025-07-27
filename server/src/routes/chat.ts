@@ -8,46 +8,7 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, experimental_transcribe as transcribe, generateObject } from 'ai';
 import multer from 'multer';
 
-// Polyfill File constructor for Node.js transcription support
-if (!globalThis.File) {
-  globalThis.File = class File {
-    constructor(fileBits, fileName, options = {}) {
-      this.name = fileName;
-      this.type = options.type || '';
-      this.size = 0;
-      this.lastModified = options.lastModified || Date.now();
-      
-      // Handle Buffer input (from multer)
-      if (Buffer.isBuffer(fileBits)) {
-        this.size = fileBits.length;
-        this._buffer = fileBits;
-      } else if (Array.isArray(fileBits)) {
-        // Handle array of Buffers/Uint8Arrays
-        this._buffer = Buffer.concat(fileBits);
-        this.size = this._buffer.length;
-      } else {
-        this._buffer = Buffer.from(fileBits);
-        this.size = this._buffer.length;
-      }
-    }
-    
-    async arrayBuffer() {
-      return this._buffer.buffer.slice(
-        this._buffer.byteOffset,
-        this._buffer.byteOffset + this._buffer.byteLength
-      );
-    }
-    
-    stream() {
-      const { Readable } = require('stream');
-      return Readable.from(this._buffer);
-    }
-    
-    async text() {
-      return this._buffer.toString();
-    }
-  };
-}
+// Note: File polyfill removed - AI SDK works with Buffer directly in Node.js
 
 // Configure OpenAI
 const openai = createOpenAI({
@@ -861,16 +822,11 @@ router.post('/transcribe', requireAuth, upload.single('audio'), async (req: Auth
       return res.status(400).json({ error: 'Audio file is required' });
     }
 
-    // Use Vercel AI SDK transcribe with File polyfill
-    const audioFile = new File(
-      [req.file.buffer], 
-      req.file.originalname || 'audio.wav',
-      { type: req.file.mimetype || 'audio/wav' }
-    );
-
+    // Use Vercel AI SDK transcribe with Buffer directly
+    // The AI SDK expects Buffer, Uint8Array, ArrayBuffer, or base64 string
     const { text } = await transcribe({
       model: openai.transcription('whisper-1'),
-      audio: audioFile,
+      audio: req.file.buffer, // Pass Buffer directly - this is what AI SDK expects
       providerOptions: {
         openai: {
           language: 'en',

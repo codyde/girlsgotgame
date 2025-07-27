@@ -55,8 +55,8 @@ export const auth: any = betterAuth({
     }
   },
   trustedOrigins: process.env.NODE_ENV === 'production'
-      ? ["https://girlsgotgame.app", "myapp://"]
-      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "girlsgotgameios://", "exp://*",],
+      ? ["https://girlsgotgame.app", "girlsgotgameios://"]
+      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "girlsgotgameios://", "exp://*"],
   callbacks: {
     redirect: async (url: string, request: any) => {
       const { headers } = request;
@@ -65,7 +65,9 @@ export const auth: any = betterAuth({
         url,
         userAgent: headers['user-agent'],
         referer: headers['referer'],
-        origin: headers['origin']
+        origin: headers['origin'],
+        fullUrl: request?.url,
+        query: request?.query
       });
       
       // Check if this is a mobile request by detecting CFNetwork user agent
@@ -74,7 +76,7 @@ export const auth: any = betterAuth({
       
       // For OAuth callbacks from mobile, redirect to mobile app
       if (isMobileRequest && url.includes('/')) {
-        const mobileRedirect = 'myapp:///feed';
+        const mobileRedirect = 'girlsgotgameios://--/auth/callback';
         console.log('📱 [BETTER AUTH] Mobile detected - redirecting to:', mobileRedirect);
         return mobileRedirect;
       }
@@ -107,13 +109,15 @@ export const auth: any = betterAuth({
       });
 
       // Log social sign-in attempts
-      if (ctx.path.includes('/sign-in/social/')) {
-        const provider = ctx.path.split('/sign-in/social/')[1];
+      if (ctx.path.includes('/sign-in/social')) {
+        const provider = ctx.path.split('/sign-in/social/')[1] || 'from-body';
         logger.info('Social sign-in attempt', {
           provider,
           origin: ctx.request?.headers?.get('origin'),
           referer: ctx.request?.headers?.get('referer'),
           userAgent: ctx.request?.headers?.get('user-agent'),
+          fullPath: ctx.path,
+          requestUrl: ctx.request?.url,
           component: 'better-auth-social-signin'
         });
       }
