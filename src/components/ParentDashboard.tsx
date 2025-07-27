@@ -13,10 +13,12 @@ interface WorkoutWithUser extends Workout {
 export function ParentDashboard() {
   const { user, profile, updateProfile } = useAuth()
   const [children, setChildren] = useState<User[]>([])
+  const [manualPlayers, setManualPlayers] = useState<any[]>([])
   const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [childGames, setChildGames] = useState<GameWithUserStats[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
+  const [selectedType, setSelectedType] = useState<'registered' | 'manual'>('registered')
   const [expandedGameStats, setExpandedGameStats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -25,15 +27,27 @@ export function ParentDashboard() {
 
   const fetchMyChildren = async () => {
     try {
-      const { data, error } = await api.getMyChildren()
+      const [childrenResponse, manualPlayersResponse] = await Promise.all([
+        api.getMyChildren(),
+        api.getMyManualPlayers()
+      ])
 
-      if (error) throw new Error(error)
-      setChildren(data || [])
+      if (childrenResponse.error) throw new Error(childrenResponse.error)
+      if (manualPlayersResponse.error) throw new Error(manualPlayersResponse.error)
+      
+      setChildren(childrenResponse.data || [])
+      setManualPlayers(manualPlayersResponse.data || [])
       
       // If parent has only one child, auto-select them
-      if (data && data.length === 1 && !selectedChild) {
-        setSelectedChild(data[0].id)
-        fetchChildData(data[0].id)
+      if (childrenResponse.data && childrenResponse.data.length === 1 && !selectedChild) {
+        setSelectedChild(childrenResponse.data[0].id)
+        setSelectedType('registered')
+        fetchChildData(childrenResponse.data[0].id)
+      } else if (childrenResponse.data?.length === 0 && manualPlayersResponse.data && manualPlayersResponse.data.length === 1 && !selectedChild) {
+        // If no registered children but one manual player, auto-select them
+        setSelectedChild(manualPlayersResponse.data[0].id)
+        setSelectedType('manual')
+        fetchManualPlayerData(manualPlayersResponse.data[0].id)
       }
     } catch (error: unknown) {
       toast.error('Error loading children: ' + (error instanceof Error ? error.message : String(error)))
@@ -42,7 +56,7 @@ export function ParentDashboard() {
     }
   }
 
-  const fetchChildData = async (childId: string) => {
+    const fetchChildData = async (childId: string) => {
     try {
       // Fetch workouts and games in parallel
       const [workoutsResponse, gamesResponse] = await Promise.all([
@@ -52,7 +66,7 @@ export function ParentDashboard() {
 
       if (workoutsResponse.error) throw new Error(workoutsResponse.error)
       if (gamesResponse.error) throw new Error(gamesResponse.error)
-      
+
       setChildWorkouts(workoutsResponse.data || [])
       setChildGames(gamesResponse.data || [])
     } catch (error: unknown) {
@@ -60,9 +74,34 @@ export function ParentDashboard() {
     }
   }
 
-  const selectChild = async (childId: string) => {
+  const fetchManualPlayerData = async (manualPlayerId: string) => {
+    try {
+      // Manual players don't have workouts, only games
+      // For now, we'll just clear workouts and fetch games that include this manual player
+      setChildWorkouts([])
+      
+      // We need to get games where this manual player participated
+      // Since we don't have a direct API for this yet, we'll get all games and filter on the frontend
+      const gamesResponse = await api.getAllGames()
+      
+      if (gamesResponse.error) throw new Error(gamesResponse.error)
+      
+      // Filter games where this manual player participated
+      // This is a simplified approach - in a real implementation, you'd want a dedicated API endpoint
+      setChildGames(gamesResponse.data || [])
+    } catch (error: unknown) {
+      toast.error('Error loading manual player data: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const selectChild = async (childId: string, type: 'registered' | 'manual') => {
     setSelectedChild(childId)
-    fetchChildData(childId)
+    setSelectedType(type)
+    if (type === 'registered') {
+      fetchChildData(childId)
+    } else {
+      fetchManualPlayerData(childId)
+    }
   }
 
   const formatTime = (dateString: string) => {
@@ -106,7 +145,12 @@ export function ParentDashboard() {
     })
   }
 
-  const selectedChildProfile = children.find(p => p.id === selectedChild)
+  const selectedChildProfile = selectedType === 'registered' 
+    ? children.find(p => p.id === selectedChild)
+    : null
+  const selectedManualPlayer = selectedType === 'manual' 
+    ? manualPlayers.find(p => p.id === selectedChild)
+    : null
 
   if (loading) {
     return (
@@ -142,7 +186,7 @@ export function ParentDashboard() {
             Select Your Child
           </h3>
           
-          {children.length === 0 ? (
+          {children.length === 0 && manualPlayers.length === 0 ? (
             <div className="text-center py-6">
               <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-body">No children assigned to your account yet.</p>
@@ -155,24 +199,39 @@ export function ParentDashboard() {
                 onChange={(e) => {
                   const childId = e.target.value
                   if (childId) {
-                    selectChild(childId)
+                    // Determine if this is a registered child or manual player
+                    const isRegistered = children.some(child => child.id === childId)
+                    selectChild(childId, isRegistered ? 'registered' : 'manual')
                   }
                 }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
               >
                 <option value="">Select a child...</option>
-                {children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
-                  </option>
-                ))}
+                {children.length > 0 && (
+                  <optgroup label="Registered Children">
+                    {children.map((child) => (
+                      <option key={child.id} value={child.id}>
+                        {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {manualPlayers.length > 0 && (
+                  <optgroup label="Manual Players">
+                    {manualPlayers.map((player) => (
+                      <option key={player.id} value={player.id}>
+                        {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''} - Not Registered
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           )}
             
-            {selectedChildProfile && (
+            {(selectedChildProfile || selectedManualPlayer) && (
               <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 mt-3">
-                {selectedChildProfile.avatarUrl ? (
+                {selectedChildProfile?.avatarUrl ? (
                   <img
                     src={selectedChildProfile.avatarUrl}
                     alt="Child"
@@ -180,27 +239,36 @@ export function ParentDashboard() {
                   />
                 ) : (
                   <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                    {selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()}
+                    {selectedChildProfile?.name?.[0]?.toUpperCase() || 
+                     selectedChildProfile?.email[0].toUpperCase() ||
+                     selectedManualPlayer?.name?.[0]?.toUpperCase() || 'M'}
                   </div>
                 )}
                 <div>
                   <p className="font-semibold font-body text-green-800">
-                    Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
+                    Currently viewing: {selectedChildProfile?.name || selectedChildProfile?.email.split('@')[0] || selectedManualPlayer?.name}
+                    {selectedManualPlayer && selectedManualPlayer.jerseyNumber && (
+                      <span className="ml-2 text-sm text-gray-500">#{selectedManualPlayer.jerseyNumber}</span>
+                    )}
                   </p>
-                  <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
+                  <p className="text-sm font-body text-green-600">
+                    {selectedChildProfile ? `${selectedChildProfile.totalPoints || 0} total points` : 'Manual Player (Not Registered)'}
+                  </p>
                 </div>
               </div>
             )}
         </div>
 
         {/* Child Stats */}
-        {selectedChildProfile && (
+        {(selectedChildProfile || selectedManualPlayer) && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-3">
                 <Trophy className="w-8 h-8 text-primary-500" />
                 <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">
+                    {selectedChildProfile ? (selectedChildProfile.totalPoints || 0) : 'N/A'}
+                  </div>
                   <div className="text-sm font-body text-gray-600">Total Points</div>
                 </div>
               </div>
@@ -209,7 +277,9 @@ export function ParentDashboard() {
               <div className="flex items-center gap-3">
                 <Target className="w-8 h-8 text-green-500" />
                 <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{childWorkouts.length}</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">
+                    {selectedType === 'registered' ? childWorkouts.length : 'N/A'}
+                  </div>
                   <div className="text-sm font-body text-gray-600">Total Workouts</div>
                 </div>
               </div>
@@ -358,7 +428,7 @@ export function ParentDashboard() {
                         >
                           <div className="flex items-center gap-3">
                             <h4 className="font-medium text-gray-900 font-body">
-                              {selectedChildProfile?.name || 'Player'}'s Stats
+                              {selectedChildProfile?.name || selectedManualPlayer?.name || 'Player'}'s Stats
                             </h4>
                             <span className="text-xs text-gray-500 font-body">
                               {game.stats.length} stat{game.stats.length !== 1 ? 's' : ''}
@@ -419,8 +489,8 @@ export function ParentDashboard() {
           </div>
         )}
 
-        {/* Recent Training Sessions */}
-        {selectedChild && (
+        {/* Recent Training Sessions - Only for registered children */}
+        {selectedChild && selectedType === 'registered' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold font-heading text-gray-900 flex items-center gap-2">

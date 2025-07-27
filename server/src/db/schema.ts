@@ -446,6 +446,9 @@ export const manualPlayers = pgTable('manual_players', {
   linkedUserId: varchar('linked_user_id', { length: 255 }), // Admin can link to registered user
   linkedBy: varchar('linked_by', { length: 255 }), // Admin who made the link
   linkedAt: timestamp('linked_at'),
+  parentId: varchar('parent_id', { length: 255 }), // Link to parent user for unregistered children
+  parentLinkedBy: varchar('parent_linked_by', { length: 255 }), // Admin who linked to parent
+  parentLinkedAt: timestamp('parent_linked_at'),
   notes: text('notes'), // Additional notes about the player
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
@@ -497,6 +500,14 @@ export const manualPlayersRelations = relations(manualPlayers, ({ one }) => ({
   }),
   linker: one(user, {
     fields: [manualPlayers.linkedBy],
+    references: [user.id],
+  }),
+  parent: one(user, {
+    fields: [manualPlayers.parentId],
+    references: [user.id],
+  }),
+  parentLinker: one(user, {
+    fields: [manualPlayers.parentLinkedBy],
     references: [user.id],
   }),
 }));

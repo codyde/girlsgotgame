@@ -27,6 +27,9 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const [selectedManualPlayer, setSelectedManualPlayer] = useState<string>('')
   const [selectedUserForLink, setSelectedUserForLink] = useState<string>('')
   const [showLinkManualPlayer, setShowLinkManualPlayer] = useState(false)
+  const [selectedManualPlayerForParent, setSelectedManualPlayerForParent] = useState<string>('')
+  const [selectedParentForManual, setSelectedParentForManual] = useState<string>('')
+  const [showLinkManualPlayerToParent, setShowLinkManualPlayerToParent] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
   const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports' | 'manual-players'>('workouts')
@@ -351,6 +354,42 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
       refreshManualPlayers()
     } catch (error: unknown) {
       toast.error('Error unlinking manual player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const linkManualPlayerToParent = async () => {
+    if (!selectedManualPlayerForParent || !selectedParentForManual) {
+      toast.error('Please select both a manual player and a parent')
+      return
+    }
+
+    try {
+      const { error } = await api.linkManualPlayerToParent(selectedManualPlayerForParent, selectedParentForManual)
+      if (error) throw new Error(error)
+      
+      toast.success('Manual player linked to parent successfully!')
+      setShowLinkManualPlayerToParent(false)
+      setSelectedManualPlayerForParent('')
+      setSelectedParentForManual('')
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error linking manual player to parent: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const unlinkManualPlayerFromParent = async (manualPlayerId: string) => {
+    if (!confirm('Are you sure you want to unlink this manual player from their parent?')) {
+      return
+    }
+
+    try {
+      const { error } = await api.unlinkManualPlayerFromParent(manualPlayerId)
+      if (error) throw new Error(error)
+      
+      toast.success('Manual player unlinked from parent successfully!')
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error unlinking manual player from parent: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -1546,15 +1585,24 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold font-heading text-gray-900">Manual Players</h3>
-                  <p className="text-sm font-body text-gray-600">Manage manually added players and link them to registered users</p>
+                  <p className="text-sm font-body text-gray-600">Manage manually added players and link them to registered users or parents</p>
                 </div>
-                <button
-                  onClick={() => setShowLinkManualPlayer(!showLinkManualPlayer)}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
-                >
-                  <Plus className="w-4 h-4" />
-                  Link Player
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowLinkManualPlayer(!showLinkManualPlayer)}
+                    className="flex items-center gap-2 px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Link to User
+                  </button>
+                  <button
+                    onClick={() => setShowLinkManualPlayerToParent(!showLinkManualPlayerToParent)}
+                    className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-body"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Link to Parent
+                  </button>
+                </div>
               </div>
 
               {/* Link Manual Player Form */}
@@ -1613,6 +1661,63 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                   </div>
                 </div>
               )}
+
+              {/* Link Manual Player to Parent Form */}
+              {showLinkManualPlayerToParent && (
+                <div className="mt-4 p-4 bg-green-50 rounded-lg">
+                  <h4 className="text-md font-medium font-heading text-gray-900 mb-4">Link Manual Player to Parent</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Manual Player</label>
+                      <select
+                        value={selectedManualPlayerForParent}
+                        onChange={(e) => setSelectedManualPlayerForParent(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-body"
+                      >
+                        <option value="">Select a manual player</option>
+                        {manualPlayers.filter(mp => !mp.parentId).map((player) => (
+                          <option key={player.id} value={player.id}>
+                            {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-1">Parent</label>
+                      <select
+                        value={selectedParentForManual}
+                        onChange={(e) => setSelectedParentForManual(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 font-body"
+                      >
+                        <option value="">Select a parent</option>
+                        {profiles.filter(p => p.role === 'parent').map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name || profile.email.split('@')[0]} ({profile.email})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-4">
+                    <button
+                      onClick={linkManualPlayerToParent}
+                      className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-body"
+                    >
+                      Link to Parent
+                    </button>
+                    <button
+                      onClick={() => {
+                        setShowLinkManualPlayerToParent(false)
+                        setSelectedManualPlayerForParent('')
+                        setSelectedParentForManual('')
+                      }}
+                      className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors font-body"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Manual Players List */}
@@ -1642,10 +1747,17 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                             </h4>
                             {player.linkedUserId ? (
                               <p className="text-sm text-green-600 font-body">
-                                Linked to: {player.linkedUser?.name || player.linkedUser?.email || 'Unknown User'}
+                                Linked to user: {player.linkedUser?.name || player.linkedUser?.email || 'Unknown User'}
                               </p>
                             ) : (
                               <p className="text-sm text-orange-600 font-body">Not linked to any user</p>
+                            )}
+                            {player.parentId ? (
+                              <p className="text-sm text-blue-600 font-body">
+                                Linked to parent: {profiles.find(p => p.id === player.parentId)?.name || profiles.find(p => p.id === player.parentId)?.email || 'Unknown Parent'}
+                              </p>
+                            ) : (
+                              <p className="text-sm text-gray-500 font-body">Not linked to any parent</p>
                             )}
                             {player.notes && (
                               <p className="text-sm text-gray-600 font-body mt-1">{player.notes}</p>
@@ -1662,7 +1774,7 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                             onClick={() => unlinkManualPlayer(player.id)}
                             className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-body"
                           >
-                            Unlink
+                            Unlink User
                           </button>
                         ) : (
                           <button
@@ -1672,7 +1784,25 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                             }}
                             className="px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors font-body"
                           >
-                            Link
+                            Link User
+                          </button>
+                        )}
+                        {player.parentId ? (
+                          <button
+                            onClick={() => unlinkManualPlayerFromParent(player.id)}
+                            className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-body"
+                          >
+                            Unlink Parent
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedManualPlayerForParent(player.id)
+                              setShowLinkManualPlayerToParent(true)
+                            }}
+                            className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors font-body"
+                          >
+                            Link Parent
                           </button>
                         )}
                       </div>

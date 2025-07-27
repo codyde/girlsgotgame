@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, asc } from 'drizzle-orm';
 import { db } from '../db';
-import { user, parentChildRelations } from '../db/schema';
+import { user, parentChildRelations, manualPlayers } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { createProfileSchema, updateProfileSchema } from '../types';
 
@@ -465,6 +465,37 @@ router.patch('/admin/approve/:userId', requireAuth, async (req: AuthenticatedReq
   } catch (error) {
     console.error('Error approving user:', error);
     res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get parent's linked manual players
+router.get('/my-manual-players', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const parentId = req.user!.id;
+
+    // Only parents can access this
+    if (req.user!.role !== 'parent') {
+      return res.status(403).json({ error: 'Parent access required' });
+    }
+
+    // Get manual players linked to this parent
+    const manualPlayersList = await db
+      .select({
+        id: manualPlayers.id,
+        name: manualPlayers.name,
+        jerseyNumber: manualPlayers.jerseyNumber,
+        notes: manualPlayers.notes,
+        parentLinkedAt: manualPlayers.parentLinkedAt,
+        createdAt: manualPlayers.createdAt,
+      })
+      .from(manualPlayers)
+      .where(eq(manualPlayers.parentId, parentId))
+      .orderBy(asc(manualPlayers.name));
+
+    res.json(manualPlayersList);
+  } catch (error) {
+    console.error('Error fetching parent manual players:', error);
+    res.status(500).json({ error: 'Failed to fetch manual players' });
   }
 });
 
