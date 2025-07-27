@@ -7,7 +7,6 @@ export interface User {
   avatarUrl: string | null
   totalPoints: number
   role: 'parent' | 'player'
-  childId: string | null
   isOnboarded: boolean
   isVerified: boolean
   jerseyNumber: number | null
@@ -118,6 +117,13 @@ export interface Game {
   isSharedToFeed: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface GameWithUserStats extends Game {
+  gamePlayerId: string
+  jerseyNumber: number | null
+  isStarter: boolean
+  stats: GameStat[]
 }
 
 export interface GameComment {

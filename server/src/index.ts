@@ -191,6 +191,129 @@ app.get('/api/auth/error', (req, res) => {
   res.redirect(`http://localhost:5174/?auth_error=${encodeURIComponent(error as string)}`);
 });
 
+// Custom logging middleware for Better Auth routes
+app.all("/api/auth/*", (req, res, next) => {
+  const startTime = Date.now();
+  const { method, url, headers, query, body } = req;
+  
+  // For POST requests, try to read the raw body if it hasn't been parsed yet
+  if (method === 'POST' && headers['content-type']?.includes('application/json')) {
+    let rawBody = '';
+    req.on('data', (chunk) => {
+      rawBody += chunk;
+    });
+    req.on('end', () => {
+      if (rawBody && url.includes('/sign-in/social')) {
+        try {
+          const parsedBody = JSON.parse(rawBody);
+          console.log('📦 [RAW BODY] POST /api/auth/sign-in/social:', {
+            rawBody,
+            parsedBody,
+            provider: parsedBody?.provider,
+            callbackURL: parsedBody?.callbackURL,
+            timestamp: new Date().toISOString()
+          });
+        } catch (e) {
+          console.log('📦 [RAW BODY] Failed to parse:', { rawBody, error: e.message });
+        }
+      }
+    });
+  }
+  
+  // Log inbound request details
+  console.log(`🔐 [AUTH REQUEST] ${method} ${url}`, {
+    timestamp: new Date().toISOString(),
+    method,
+    url,
+    path: req.path,
+    query,
+    userAgent: headers['user-agent'],
+    referer: headers.referer,
+    origin: headers.origin,
+    forwardedFor: headers['x-forwarded-for'],
+    realIp: headers['x-real-ip'],
+    clientIp: req.ip,
+    contentType: headers['content-type'],
+    contentLength: headers['content-length'],
+    accept: headers.accept,
+    authorization: headers.authorization ? 'present' : 'none',
+    cookies: headers.cookie ? 'present' : 'none',
+    sessionCookie: headers.cookie && headers.cookie.includes('better-auth.session_token') ? 'present' : 'none',
+    // Log body for POST requests (but sanitize sensitive data)
+    bodyPresent: body ? Object.keys(body).length > 0 : false,
+    bodyKeys: body ? Object.keys(body) : [],
+  });
+
+  // Log specific details for social sign-in requests
+  if (url.includes('/sign-in/social')) {
+    // For web: provider is in URL path like /sign-in/social/google
+    const urlProvider = req.path.split('/').pop();
+    // For mobile: provider might be in request body
+    const bodyProvider = body?.provider;
+    // Use the more specific one
+    const actualProvider = (urlProvider && urlProvider !== 'social') ? urlProvider : bodyProvider || 'unknown';
+    
+    // Determine detection source for logging
+    const detectionSource = (urlProvider && urlProvider !== 'social') ? 'url' : 
+                           (bodyProvider) ? 'body' : 
+                           (method === 'POST') ? 'body_unavailable' : 'url';
+
+    console.log(`🔗 [SOCIAL SIGN-IN] Provider: ${actualProvider}`, {
+      provider: actualProvider,
+      detectedFrom: detectionSource,
+      requestMethod: method,
+      contentType: headers['content-type'],
+      callbackUrl: query.callbackURL || query.callback_url || query.redirect_uri || body?.callbackURL,
+      state: query.state || body?.state,
+      code: query.code ? 'present' : 'none',
+      error: query.error || body?.error,
+      errorDescription: query.error_description || body?.error_description,
+    });
+  }
+
+  // Log callback requests
+  if (url.includes('/callback')) {
+    const pathParts = req.path.split('/');
+    const provider = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2] || 'unknown';
+
+    console.log(`🔄 [AUTH CALLBACK]`, {
+      provider: provider,
+      fullPath: req.path,
+      state: query.state,
+      code: query.code ? 'present' : 'none',
+      error: query.error,
+      errorDescription: query.error_description,
+    });
+  }
+
+  // Override res.json to log response
+  const originalJson = res.json;
+  res.json = function(data) {
+    const duration = Date.now() - startTime;
+    console.log(`🔐 [AUTH RESPONSE] ${method} ${url}`, {
+      statusCode: res.statusCode,
+      duration: `${duration}ms`,
+      hasData: !!data,
+      dataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
+    });
+    return originalJson.call(this, data);
+  };
+
+  // Override res.redirect to log redirects
+  const originalRedirect = res.redirect;
+  res.redirect = function(...args) {
+    const duration = Date.now() - startTime;
+    console.log(`🔐 [AUTH REDIRECT] ${method} ${url}`, {
+      statusCode: res.statusCode,
+      duration: `${duration}ms`,
+      redirectTo: args[args.length - 1], // Last argument is always the URL
+    });
+    return originalRedirect.apply(this, args);
+  };
+
+  next();
+});
+
 // Handle Better Auth routes - use the official pattern from documentation
 // IMPORTANT: This MUST come before express.json() middleware
 app.all("/api/auth/*", toNodeHandler(auth));
@@ -384,7 +507,6 @@ const initializeServer = async () => {
   server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`Socket.IO enabled for real-time chat`);
   });
 };
 

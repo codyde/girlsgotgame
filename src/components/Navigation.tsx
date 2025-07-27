@@ -16,7 +16,6 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
-  const isParentWithChild = user?.role === 'parent' && user?.childId
   const isParent = profile?.role === 'parent'
   const isVerified = profile?.isVerified === true
   const canCreateInvites = isVerified && (isAdmin || isParent)
@@ -35,8 +34,8 @@ export function Navigation({ currentTab, setCurrentTab }: NavigationProps) {
     { id: 'profile', label: 'Profile', icon: UserIcon },
   ]
 
-  // Add parent dashboard tab for verified parents with assigned children
-  if (isVerified && isParentWithChild) {
+  // Add parent dashboard tab for verified parents
+  if (isVerified && isParent) {
     tabs.splice(1, 0, { id: 'parent-dashboard', label: 'Dashboard', icon: Shield })
   }
 

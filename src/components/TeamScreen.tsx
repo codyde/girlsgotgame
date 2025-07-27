@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { Users, Crown, Calendar, ChevronRight, UserCheck } from 'lucide-react'
+import { Users, Crown, Calendar, ChevronRight, UserCheck, User as UserIcon } from 'lucide-react'
 import { api } from '../lib/api'
 import { Team, TeamMember } from '../types'
 import toast from 'react-hot-toast'
@@ -11,8 +11,10 @@ export function TeamScreen() {
   const [loading, setLoading] = useState(true)
   const [membersLoading, setMembersLoading] = useState(false)
 
-  // Filter to only show players (not coaches/parents)
+  // Separate members by role
   const playerMembers = teamMembers.filter(member => member.userRole === 'player')
+  const parentMembers = teamMembers.filter(member => member.userRole === 'parent')
+  const coachMembers = teamMembers.filter(member => member.role === 'admin')
 
   useEffect(() => {
     fetchUserTeams()
@@ -186,15 +188,17 @@ export function TeamScreen() {
           
           {/* Team Stats */}
           <div className="p-4 lg:p-6 bg-bg-primary border border-border-primary rounded-xl mb-6">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div className="text-center">
                 <div className="text-2xl font-bold font-body text-primary-600">{playerMembers.length}</div>
                 <div className="text-sm font-body text-text-secondary">Players</div>
               </div>
               <div className="text-center">
-                <div className="text-2xl font-bold font-body text-secondary-600">
-                  {teamMembers.filter(m => m.role === 'admin' || m.userRole === 'parent').length}
-                </div>
+                <div className="text-2xl font-bold font-body text-secondary-600">{parentMembers.length}</div>
+                <div className="text-sm font-body text-text-secondary">Parents</div>
+              </div>
+              <div className="text-center">
+                <div className="text-2xl font-bold font-body text-accent-600">{coachMembers.length}</div>
                 <div className="text-sm font-body text-text-secondary">Coaches</div>
               </div>
             </div>
@@ -215,51 +219,160 @@ export function TeamScreen() {
                 </div>
               ))}
             </div>
-          ) : playerMembers.length === 0 ? (
+          ) : teamMembers.length === 0 ? (
             <div className="text-center py-8">
               <div className="text-4xl mb-4">👥</div>
-              <h3 className="text-lg font-semibold font-heading text-text-primary mb-2">No players yet!</h3>
-              <p className="font-body text-text-secondary">This team doesn't have any players yet</p>
+              <h3 className="text-lg font-semibold font-heading text-text-primary mb-2">No members yet!</h3>
+              <p className="font-body text-text-secondary">This team doesn't have any members yet</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {playerMembers.map((member) => (
-                <div
-                  key={member.id}
-                  className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-4"
-                >
-                  <div className="flex items-center gap-4">
-                    {/* Avatar */}
-                    {member.userAvatar ? (
-                      <img
-                        src={member.userAvatar}
-                        alt="Profile"
-                        className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg bg-gradient-to-br from-primary-400 to-primary-600">
-                        {member.userName?.[0]?.toUpperCase() || member.userEmail[0].toUpperCase()}
-                      </div>
-                    )}
+            <div className="space-y-6">
+              {/* Players Section */}
+              {playerMembers.length > 0 && (
+                <div>
+                  <h2 className="text-xl font-bold font-heading text-text-primary mb-4 flex items-center gap-2">
+                    <Users className="w-5 h-5 text-primary-600" />
+                    Players ({playerMembers.length})
+                  </h2>
+                  <div className="space-y-3">
+                    {playerMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-4"
+                      >
+                        <div className="flex items-center gap-4">
+                          {/* Avatar */}
+                          {member.userAvatar ? (
+                            <img
+                              src={member.userAvatar}
+                              alt="Profile"
+                              className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg bg-gradient-to-br from-primary-400 to-primary-600">
+                              {member.userName?.[0]?.toUpperCase() || member.userEmail[0].toUpperCase()}
+                            </div>
+                          )}
 
-                    {/* Info */}
-                    <div className="flex-1">
-                      <h3 className="font-semibold font-heading text-text-primary">
-                        {member.userName || member.userEmail.split('@')[0]}
-                      </h3>
-                      <div className="flex items-center gap-2 text-sm font-body text-text-secondary">
-                        <UserCheck className="w-4 h-4" />
-                        <span>{member.userEmail}</span>
-                      </div>
-                    </div>
-                  </div>
+                          {/* Info */}
+                          <div className="flex-1">
+                            <h3 className="font-semibold font-heading text-text-primary">
+                              {member.userName || member.userEmail.split('@')[0]}
+                            </h3>
+                            <div className="flex items-center gap-2 text-sm font-body text-text-secondary">
+                              <UserCheck className="w-4 h-4" />
+                              <span>{member.userEmail}</span>
+                            </div>
+                          </div>
+                        </div>
 
-                  {/* Join date */}
-                  <div className="mt-3 text-xs font-body text-text-tertiary">
-                    Joined {new Date(member.joinedAt).toLocaleDateString()}
+                        {/* Join date */}
+                        <div className="mt-3 text-xs font-body text-text-tertiary">
+                          Joined {new Date(member.joinedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ))}
+              )}
+
+              {/* Parents Section */}
+              {parentMembers.length > 0 && (
+                <div>
+                  <h2 className="text-xl font-bold font-heading text-text-primary mb-4 flex items-center gap-2">
+                    <UserIcon className="w-5 h-5 text-secondary-600" />
+                    Parents ({parentMembers.length})
+                  </h2>
+                  <div className="space-y-3">
+                    {parentMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-4"
+                      >
+                        <div className="flex items-center gap-4">
+                          {/* Avatar */}
+                          {member.userAvatar ? (
+                            <img
+                              src={member.userAvatar}
+                              alt="Profile"
+                              className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg bg-gradient-to-br from-secondary-400 to-secondary-600">
+                              {member.userName?.[0]?.toUpperCase() || member.userEmail[0].toUpperCase()}
+                            </div>
+                          )}
+
+                          {/* Info */}
+                          <div className="flex-1">
+                            <h3 className="font-semibold font-heading text-text-primary">
+                              {member.userName || member.userEmail.split('@')[0]}
+                            </h3>
+                            <div className="flex items-center gap-2 text-sm font-body text-text-secondary">
+                              <UserCheck className="w-4 h-4" />
+                              <span>{member.userEmail}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Join date */}
+                        <div className="mt-3 text-xs font-body text-text-tertiary">
+                          Joined {new Date(member.joinedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Coaches Section */}
+              {coachMembers.length > 0 && (
+                <div>
+                  <h2 className="text-xl font-bold font-heading text-text-primary mb-4 flex items-center gap-2">
+                    <Crown className="w-5 h-5 text-accent-600" />
+                    Coaches ({coachMembers.length})
+                  </h2>
+                  <div className="space-y-3">
+                    {coachMembers.map((member) => (
+                      <div
+                        key={member.id}
+                        className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-4"
+                      >
+                        <div className="flex items-center gap-4">
+                          {/* Avatar */}
+                          {member.userAvatar ? (
+                            <img
+                              src={member.userAvatar}
+                              alt="Profile"
+                              className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg bg-gradient-to-br from-accent-400 to-accent-600">
+                              {member.userName?.[0]?.toUpperCase() || member.userEmail[0].toUpperCase()}
+                            </div>
+                          )}
+
+                          {/* Info */}
+                          <div className="flex-1">
+                            <h3 className="font-semibold font-heading text-text-primary">
+                              {member.userName || member.userEmail.split('@')[0]}
+                            </h3>
+                            <div className="flex items-center gap-2 text-sm font-body text-text-secondary">
+                              <Crown className="w-4 h-4" />
+                              <span>{member.userEmail}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Join date */}
+                        <div className="mt-3 text-xs font-body text-text-tertiary">
+                          Joined {new Date(member.joinedAt).toLocaleDateString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

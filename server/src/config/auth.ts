@@ -37,6 +37,7 @@ export const auth: any = betterAuth({
     provider: "pg",
     schema: schema
   }),
+
   socialProviders: {
     google: {
       clientId: process.env.GOOGLE_CLIENT_ID as string,
@@ -53,15 +54,81 @@ export const auth: any = betterAuth({
       maxAge: 60 * 5, // 5 minutes
     }
   },
-  cookies: {
-    sameSite: "lax", // Important for OAuth flows
-    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production
-    httpOnly: true,
-  },
   trustedOrigins: process.env.NODE_ENV === 'production'
       ? ["https://girlsgotgame.app", "myapp://"]
-      : ["http://localhost:5173", "http://localhost:5174", "myapp://", "exp://192.168.1.8:8081/--"],
+      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "myapp://", "exp://192.168.1.8:8081/--"],
+  callbacks: {
+    redirect: async (url: string, request: any) => {
+      const { headers } = request;
+      
+      console.log('🔄 [BETTER AUTH] Redirect callback triggered:', {
+        url,
+        userAgent: headers['user-agent'],
+        referer: headers['referer'],
+        origin: headers['origin']
+      });
+      
+      // Check if this is a mobile request by detecting CFNetwork user agent
+      const isMobileRequest = headers['user-agent']?.includes('CFNetwork') || 
+                             headers['user-agent']?.includes('boltexponativewind');
+      
+      // For OAuth callbacks from mobile, redirect to mobile app
+      if (isMobileRequest && url.includes('/')) {
+        const mobileRedirect = 'myapp:///feed';
+        console.log('📱 [BETTER AUTH] Mobile detected - redirecting to:', mobileRedirect);
+        return mobileRedirect;
+      }
+      
+      // For web requests, redirect to web app
+      if (url.includes('localhost:3001') || url === '/') {
+        const webRedirect = 'http://localhost:5173/dashboard';
+        console.log('🌐 [BETTER AUTH] Web detected - redirecting to:', webRedirect);
+        return webRedirect;
+      }
+      
+      console.log('🔄 [BETTER AUTH] Using default redirect:', url);
+      return url;
+    }
+  },
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      const { logger } = Sentry;
+      
+      // Log all incoming auth requests with detailed context
+      logger.info('Better Auth request received', {
+        path: ctx.path,
+        method: ctx.request?.method,
+        userAgent: ctx.request?.headers?.get('user-agent'),
+        origin: ctx.request?.headers?.get('origin'),
+        referer: ctx.request?.headers?.get('referer'),
+        ip: ctx.request?.headers?.get('x-forwarded-for') || ctx.request?.headers?.get('x-real-ip'),
+        timestamp: new Date().toISOString(),
+        component: 'better-auth-before'
+      });
+
+      // Log social sign-in attempts
+      if (ctx.path.includes('/sign-in/social/')) {
+        const provider = ctx.path.split('/sign-in/social/')[1];
+        logger.info('Social sign-in attempt', {
+          provider,
+          origin: ctx.request?.headers?.get('origin'),
+          referer: ctx.request?.headers?.get('referer'),
+          userAgent: ctx.request?.headers?.get('user-agent'),
+          component: 'better-auth-social-signin'
+        });
+      }
+
+      // Log OAuth callbacks
+      if (ctx.path.includes('/callback/')) {
+        const provider = ctx.path.split('/callback/')[1];
+        logger.info('OAuth callback received', {
+          provider,
+          hasCode: ctx.request?.url?.includes('code='),
+          hasError: ctx.request?.url?.includes('error='),
+          component: 'better-auth-callback'
+        });
+      }
+    }),
     after: createAuthMiddleware(async (ctx) => {
       // Auto-verify users who sign up through invite links
       if (ctx.path.includes("/callback/") && ctx.context.newSession) {
@@ -149,9 +216,22 @@ export const auth: any = betterAuth({
           console.log('🎉 New user registered and logged to Sentry:', { id: user.id, email: user.email, provider });
         }
       }
+
+      // Log successful authentications
+      if (ctx.context.newSession) {
+        const { logger } = Sentry;
+        const session = ctx.context.newSession;
+        logger.info('Authentication successful', {
+          userId: session.user?.id,
+          email: session.user?.email,
+          provider: ctx.path.includes('/callback/') ? ctx.path.split('/callback/')[1] : 'unknown',
+          isNewUser: ctx.context.isNewUser,
+          component: 'better-auth-success'
+        });
+      }
     }),
   },
-});
+} as any);
 
 console.log('🔧 Better Auth initialized successfully');
 console.log('🔧 Better Auth handlers available:', Object.keys(auth.api));

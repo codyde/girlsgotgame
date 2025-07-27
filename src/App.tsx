@@ -19,6 +19,7 @@ import { MediaScreen } from './components/MediaScreen'
 import { ProfileScreen } from './components/ProfileScreen'
 import { AdminScreen } from './components/AdminScreen'
 import { Navigation } from './components/Navigation'
+import { AIChatBubble } from './components/AIChatBubble'
 
 function AppContent() {
   const { session, profile, loading } = useAuth()
@@ -174,6 +175,9 @@ function AppContent() {
         isOpen={showOnboarding} 
         onClose={() => setShowOnboarding(false)}
       />
+
+      {/* AI Chat Bubble - Admin only */}
+      <AIChatBubble />
     </div>
   )
 }
