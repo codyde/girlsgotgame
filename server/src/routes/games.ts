@@ -31,14 +31,20 @@ router.get('/', async (req, res) => {
         .from(games)
         .orderBy(asc(games.gameDate));
     } else if (user.role === 'parent') {
-      // Parents only see games where their children participated
+      // Parents see games where their children participated OR where their linked manual players participated
       const childRelations = await db
         .select({ childId: parentChildRelations.childId })
         .from(parentChildRelations)
         .where(eq(parentChildRelations.parentId, user.id));
+
+      // Get manual players linked to this parent
+      const linkedManualPlayers = await db
+        .select({ id: manualPlayers.id })
+        .from(manualPlayers)
+        .where(eq(manualPlayers.parentId, user.id));
       
-      if (childRelations.length === 0) {
-        // Parent has no assigned children, return all games for now
+      if (childRelations.length === 0 && linkedManualPlayers.length === 0) {
+        // Parent has no assigned children or manual players, return all games for now
         // This prevents parents from seeing empty lists if relationships aren't set up
         const allGames = await db
           .select()
@@ -48,8 +54,20 @@ router.get('/', async (req, res) => {
       }
       
       const childUserIds = childRelations.map(rel => rel.childId);
+      const manualPlayerIds = linkedManualPlayers.map(mp => mp.id);
       
-      // Get games where any of the parent's children participated
+      // Build conditions for registered children and manual players
+      const conditions = [];
+      
+      if (childUserIds.length > 0) {
+        conditions.push(...childUserIds.map(childId => eq(gamePlayers.userId, childId)));
+      }
+      
+      if (manualPlayerIds.length > 0) {
+        conditions.push(...manualPlayerIds.map(mpId => eq(gamePlayers.manualPlayerId, mpId)));
+      }
+      
+      // Get games where any of the parent's children or manual players participated
       gamesQuery = db
         .select({
           id: games.id,
@@ -67,9 +85,7 @@ router.get('/', async (req, res) => {
         })
         .from(games)
         .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
-        .where(
-          or(...childUserIds.map(childId => eq(gamePlayers.userId, childId)))
-        )
+        .where(or(...conditions))
         .groupBy(
           games.id,
           games.teamName,
@@ -1265,6 +1281,9 @@ router.get('/admin/manual-players', requireAuth, async (req: AuthenticatedReques
         linkedUserId: manualPlayers.linkedUserId,
         linkedBy: manualPlayers.linkedBy,
         linkedAt: manualPlayers.linkedAt,
+        parentId: manualPlayers.parentId,
+        parentLinkedBy: manualPlayers.parentLinkedBy,
+        parentLinkedAt: manualPlayers.parentLinkedAt,
         notes: manualPlayers.notes,
         createdAt: manualPlayers.createdAt,
         updatedAt: manualPlayers.updatedAt,
@@ -1355,6 +1374,92 @@ router.patch('/admin/manual-players/:manualPlayerId/unlink', requireAuth, async 
   } catch (error) {
     console.error('Error unlinking manual player:', error);
     res.status(500).json({ error: 'Failed to unlink manual player' });
+  }
+});
+
+// Link manual player to parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/link-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { manualPlayerId } = req.params;
+    const { parentId } = req.body;
+
+    if (!parentId) {
+      return res.status(400).json({ error: 'Parent ID is required' });
+    }
+
+    // Verify the parent exists and has parent role
+    const parentUser = await db
+      .select()
+      .from(userTable)
+      .where(eq(userTable.id, parentId))
+      .limit(1);
+
+    if (!parentUser.length || parentUser[0].role !== 'parent') {
+      return res.status(400).json({ error: 'Invalid parent user' });
+    }
+
+    // Update the manual player with the parent link
+    const updatedManualPlayer = await db
+      .update(manualPlayers)
+      .set({
+        parentId: parentId,
+        parentLinkedBy: user.id,
+        parentLinkedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer.length) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player linked to parent successfully', manualPlayer: updatedManualPlayer[0] });
+  } catch (error) {
+    console.error('Error linking manual player to parent:', error);
+    res.status(500).json({ error: 'Failed to link manual player to parent' });
+  }
+});
+
+// Unlink manual player from parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/unlink-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { manualPlayerId } = req.params;
+
+    // Update the manual player to remove the parent link
+    const updatedManualPlayer = await db
+      .update(manualPlayers)
+      .set({
+        parentId: null,
+        parentLinkedBy: null,
+        parentLinkedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer.length) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player unlinked from parent successfully', manualPlayer: updatedManualPlayer[0] });
+  } catch (error) {
+    console.error('Error unlinking manual player from parent:', error);
+    res.status(500).json({ error: 'Failed to unlink manual player from parent' });
   }
 });
 

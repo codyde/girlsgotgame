@@ -409,6 +409,23 @@ class ApiClient {
     });
   }
 
+  async linkManualPlayerToParent(manualPlayerId: string, parentId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/link-parent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parentId }),
+    });
+  }
+
+  async unlinkManualPlayerFromParent(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/unlink-parent`, {
+      method: 'PATCH',
+    });
+  }
+
+  async getMyManualPlayers() {
+    return this.request('/profiles/my-manual-players');
+  }
+
   // Game Stats endpoints
   async addPlayerStat(gameId: string, playerId: string, statType: string, value?: number, quarter?: number, timeMinute?: number) {
     return this.request(`/games/${gameId}/players/${playerId}/stats`, {
