@@ -149,6 +149,7 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   const [lightboxImage, setLightboxImage] = useState<string | null>(null)
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({})
   const [showReportDialog, setShowReportDialog] = useState<{ postId: string; type: 'post' | 'media' } | null>(null)
+  const [showLikesModal, setShowLikesModal] = useState<string | null>(null)
   const [reportReason, setReportReason] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -393,6 +394,13 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
       console.error('Error deleting post:', error)
       toast.error('Failed to delete post')
     }
+  }
+
+  // Opens the likes modal to show who liked the post
+  // Currently shows "You" for current user and "User" for others
+  // TODO: Extend backend to return user info with likes for full user details
+  const openLikesModal = (postId: string) => {
+    setShowLikesModal(postId)
   }
 
   const reportContent = async () => {
@@ -1069,9 +1077,12 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
 
                   {/* Like count */}
                   {likes[post.id]?.length > 0 && (
-                    <p className="text-sm font-semibold text-gray-900 mb-2 font-body">
+                    <button 
+                      onClick={() => openLikesModal(post.id)}
+                      className="text-sm font-semibold text-gray-900 mb-2 font-body hover:text-blue-600 transition-colors cursor-pointer text-left"
+                    >
                       {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
-                    </p>
+                    </button>
                   )}
 
                   {/* Most recent comment preview */}
@@ -1267,6 +1278,60 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
                   Submit Report
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Likes Modal */}
+      {showLikesModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full max-h-96 flex flex-col">
+            <div className="flex justify-between items-center p-6 border-b border-gray-200">
+              <h3 className="text-lg font-bold font-heading text-text-primary">Likes</h3>
+              <button
+                onClick={() => setShowLikesModal(null)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              {likes[showLikesModal]?.length > 0 ? (
+                <div className="space-y-4">
+                  {likes[showLikesModal].map((like) => {
+                    const isCurrentUser = like.user_id === user?.id
+                    return (
+                      <div key={like.id} className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center overflow-hidden">
+                          {isCurrentUser && user?.avatarUrl ? (
+                            <img
+                              src={user.avatarUrl}
+                              alt={user.name || 'User'}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full bg-gradient-to-br from-purple-400 to-pink-400 flex items-center justify-center text-white font-semibold text-sm">
+                              {isCurrentUser ? (user?.name?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || '?') : '👤'}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-900 font-body">
+                            {isCurrentUser ? (user?.name || user?.email || 'You') : 'User'}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(like.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-center">No likes yet</p>
+              )}
             </div>
           </div>
         </div>
