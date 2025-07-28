@@ -10,6 +10,7 @@ export interface User {
   isOnboarded: boolean
   isVerified: boolean
   jerseyNumber: number | null
+  accountType?: 'registered' | 'manual'
   createdAt: string
   updatedAt: string
 }
