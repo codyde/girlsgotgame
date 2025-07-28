@@ -8,47 +8,28 @@ import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, experimental_transcribe as transcribe, generateObject } from 'ai';
 import multer from 'multer';
 
-// File polyfill for Node.js - required by @ai-sdk/openai internally
+// Import Node.js File implementation if available (Node 20+)
+// For older Node versions, we'll create a minimal polyfill
 if (!globalThis.File) {
-  globalThis.File = class File {
-    constructor(fileBits, fileName, options = {}) {
-      this.name = fileName;
-      this.type = options.type || '';
-      this.lastModified = options.lastModified || Date.now();
+  // Try to import native File from node:buffer (Node 20+)
+  try {
+    const { File } = require('node:buffer');
+    globalThis.File = File;
+  } catch (e) {
+    // Fallback polyfill for older Node versions
+    const { Blob } = require('node:buffer');
+    
+    globalThis.File = class File extends Blob {
+      public readonly name: string;
+      public readonly lastModified: number;
       
-      // Handle different input types
-      if (Buffer.isBuffer(fileBits)) {
-        this._buffer = fileBits;
-      } else if (Array.isArray(fileBits)) {
-        this._buffer = Buffer.concat(fileBits.map(bit => Buffer.isBuffer(bit) ? bit : Buffer.from(bit)));
-      } else {
-        this._buffer = Buffer.from(fileBits);
+      constructor(fileBits: (Blob | BufferSource | string)[], fileName: string, options: { type?: string; lastModified?: number } = {}) {
+        super(fileBits, { type: options.type });
+        this.name = fileName;
+        this.lastModified = options.lastModified || Date.now();
       }
-      
-      this.size = this._buffer.length;
-    }
-    
-    async arrayBuffer() {
-      return this._buffer.buffer.slice(
-        this._buffer.byteOffset,
-        this._buffer.byteOffset + this._buffer.byteLength
-      );
-    }
-    
-    stream() {
-      const { Readable } = require('stream');
-      return Readable.from(this._buffer);
-    }
-    
-    async text() {
-      return this._buffer.toString();
-    }
-    
-    slice(start = 0, end = this.size, contentType = '') {
-      const slicedBuffer = this._buffer.slice(start, end);
-      return new File([slicedBuffer], this.name, { type: contentType || this.type });
-    }
-  };
+    };
+  }
 }
 
 // Configure OpenAI
