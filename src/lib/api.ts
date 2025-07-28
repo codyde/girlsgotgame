@@ -99,9 +99,14 @@ class ApiClient {
     return this.request('/profiles/my-children');
   }
 
-  async getProfileById(id: string) {
-    return this.request(`/profiles/${id}`);
+  async getMyLinkedManualPlayers(userId: string) {
+    return this.request(`/games/parent/${userId}/manual-players`);
   }
+
+  async getParentLinkedManualPlayers(parentId: string) {
+    return this.request(`/games/parent/${parentId}/manual-players`);
+  }
+
 
   // Workout endpoints
   async getWorkouts(limit = 20, offset = 0) {
@@ -136,9 +141,6 @@ class ApiClient {
     return this.request(`/posts/feed?limit=${limit}&offset=${offset}`);
   }
 
-  async getUserPosts(limit = 20, offset = 0) {
-    return this.request(`/posts/my-posts?limit=${limit}&offset=${offset}`);
-  }
 
   async createPost(post: any) {
     return this.request('/posts', {
@@ -200,18 +202,6 @@ class ApiClient {
     });
   }
 
-  async getPresignedUrl(fileName: string, contentType: string) {
-    return this.request('/upload/presigned-url', {
-      method: 'POST',
-      body: JSON.stringify({ fileName, contentType }),
-    });
-  }
-
-  async deleteFile(key: string) {
-    return this.request(`/upload/file/${encodeURIComponent(key)}`, {
-      method: 'DELETE',
-    });
-  }
 
   // Admin endpoints
   async getAllWorkouts() {
@@ -339,6 +329,13 @@ class ApiClient {
     });
   }
 
+  async updateGameStatsLock(gameId: string, statsLocked: boolean) {
+    return this.request(`/games/${gameId}/stats-lock`, {
+      method: 'PATCH',
+      body: JSON.stringify({ statsLocked }),
+    });
+  }
+
   async deleteGame(gameId: string) {
     return this.request(`/games/${gameId}`, {
       method: 'DELETE',
@@ -405,6 +402,19 @@ class ApiClient {
 
   async unlinkManualPlayer(manualPlayerId: string) {
     return this.request(`/games/admin/manual-players/${manualPlayerId}/unlink`, {
+      method: 'PATCH',
+    });
+  }
+
+  async linkManualPlayerToParent(manualPlayerId: string, parentId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/link-to-parent`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parentId }),
+    });
+  }
+
+  async unlinkManualPlayerFromParent(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/unlink-from-parent`, {
       method: 'PATCH',
     });
   }

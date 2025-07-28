@@ -125,62 +125,6 @@ try {
 
 // Better Auth handler MUST come before express.json() middleware
 
-// Test route to verify routing works
-app.get('/api/auth/test', (req, res) => {
-  res.json({ message: 'Better Auth test route working' });
-});
-
-// Debug route to check Better Auth API methods
-app.get('/api/debug/auth-methods', (req, res) => {
-  try {
-    console.log('🔧 Better Auth API methods:', Object.keys(auth.api));
-    console.log('🔧 Better Auth handlers:', Object.keys(auth.handler || {}));
-    res.json({ 
-      apiMethods: Object.keys(auth.api),
-      handlers: Object.keys(auth.handler || {}),
-      baseUrl: auth.options?.baseURL || 'not set'
-    });
-  } catch (error) {
-    console.error('🔴 Debug error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
-// Test route to initiate Google OAuth using Better Auth API
-app.get('/api/test-google-signin', async (req, res) => {
-  try {
-    // Try to use Better Auth API directly with proper context
-    const result = await auth.api.signInSocial({
-      body: {
-        provider: 'google',
-        callbackURL: 'http://localhost:5174/'
-      },
-      headers: req.headers as any
-    });
-    console.log('🔧 Better Auth result:', result);
-    
-    if (result.url) {
-      res.redirect(result.url);
-    } else {
-      res.json({ result });
-    }
-  } catch (error) {
-    console.error('🔴 Better Auth API error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
-// Debug route to check verification table
-app.get('/api/debug/verification', async (req, res) => {
-  try {
-    const { auth } = await import('./config/auth');
-    console.log('🔧 Checking verification table');
-    res.json({ message: 'OAuth is working! Check server logs for callback details.' });
-  } catch (error) {
-    console.error('🔴 Verification debug error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
 
 // Handle Better Auth error page - redirect back to frontend with error
 app.get('/api/auth/error', (req, res) => {

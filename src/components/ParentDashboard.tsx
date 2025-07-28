@@ -10,13 +10,26 @@ interface WorkoutWithUser extends Workout {
   user?: User
 }
 
+interface ManualPlayerWithGames {
+  id: string
+  name: string
+  jerseyNumber: number | null
+  notes: string | null
+  linkedAt: string
+  createdAt: string
+  games: GameWithUserStats[]
+}
+
 export function ParentDashboard() {
   const { user, profile, updateProfile } = useAuth()
   const [children, setChildren] = useState<User[]>([])
+  const [manualPlayers, setManualPlayers] = useState<ManualPlayerWithGames[]>([])
+  const [totalChildrenCount, setTotalChildrenCount] = useState<number>(0)
   const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [childGames, setChildGames] = useState<GameWithUserStats[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
+  const [selectedType, setSelectedType] = useState<'registered' | 'manual'>('registered')
   const [expandedGameStats, setExpandedGameStats] = useState<Set<string>>(new Set())
 
   useEffect(() => {
@@ -25,15 +38,50 @@ export function ParentDashboard() {
 
   const fetchMyChildren = async () => {
     try {
-      const { data, error } = await api.getMyChildren()
+      // 🎯 UNIFIED SYSTEM: Fetch ALL children (registered + manual) in one API call
+      const childrenResponse = await api.getMyChildren()
 
-      if (error) throw new Error(error)
-      setChildren(data || [])
+      if (childrenResponse.error) throw new Error(childrenResponse.error)
       
-      // If parent has only one child, auto-select them
-      if (data && data.length === 1 && !selectedChild) {
-        setSelectedChild(data[0].id)
-        fetchChildData(data[0].id)
+      const allChildren = childrenResponse.data || []
+      
+      // Separate children by account type for backwards compatibility
+      const registeredChildren = allChildren.filter(child => child.accountType === 'registered')
+      const manualChildren = allChildren.filter(child => child.accountType === 'manual')
+      
+      setChildren(registeredChildren)
+      setManualPlayers(manualChildren.map(child => ({
+        id: child.id,
+        name: child.name,
+        jerseyNumber: child.jerseyNumber,
+        notes: null,
+        linkedAt: child.createdAt,
+        createdAt: child.createdAt,
+        games: [] // Will be populated when selected
+      })))
+      
+      // Store total children count for UI logic
+      setTotalChildrenCount(allChildren.length)
+      
+      // Debug logging
+      console.log('🏀 Parent Dashboard Debug - Unified fetch:', {
+        totalChildren: allChildren.length,
+        registeredChildren: registeredChildren.length,
+        manualChildren: manualChildren.length,
+        allChildrenData: allChildren
+      })
+      
+      // Auto-select first available child
+      if (allChildren.length > 0 && !selectedChild) {
+        const firstChild = allChildren[0]
+        setSelectedChild(firstChild.id)
+        setSelectedType(firstChild.accountType === 'manual' ? 'manual' : 'registered')
+        
+        if (firstChild.accountType === 'manual') {
+          fetchManualPlayerData(firstChild.id)
+        } else {
+          fetchChildData(firstChild.id)
+        }
       }
     } catch (error: unknown) {
       toast.error('Error loading children: ' + (error instanceof Error ? error.message : String(error)))
@@ -60,9 +108,34 @@ export function ParentDashboard() {
     }
   }
 
-  const selectChild = async (childId: string) => {
+  const fetchManualPlayerData = async (manualPlayerId: string) => {
+    try {
+      // 🎯 UNIFIED SYSTEM: Use the same getUserGames API for manual players
+      const gamesResponse = await api.getUserGames(manualPlayerId)
+      
+      if (gamesResponse.error) throw new Error(gamesResponse.error)
+      
+      console.log('🏀 Parent Dashboard Debug - Manual player unified data:', {
+        manualPlayerId,
+        gamesCount: gamesResponse.data?.length || 0,
+        games: gamesResponse.data
+      })
+      
+      setChildGames(gamesResponse.data || [])
+      setChildWorkouts([]) // Manual players don't have workouts
+    } catch (error: unknown) {
+      toast.error('Error loading manual player data: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const selectChild = async (childId: string, type: 'registered' | 'manual') => {
     setSelectedChild(childId)
-    fetchChildData(childId)
+    setSelectedType(type)
+    if (type === 'registered') {
+      fetchChildData(childId)
+    } else {
+      fetchManualPlayerData(childId)
+    }
   }
 
   const formatTime = (dateString: string) => {
@@ -106,7 +179,12 @@ export function ParentDashboard() {
     })
   }
 
-  const selectedChildProfile = children.find(p => p.id === selectedChild)
+  const selectedChildProfile = selectedType === 'registered' 
+    ? children.find(p => p.id === selectedChild)
+    : null
+  const selectedManualPlayer = selectedType === 'manual'
+    ? manualPlayers.find(mp => mp.id === selectedChild)
+    : null
 
   if (loading) {
     return (
@@ -142,7 +220,7 @@ export function ParentDashboard() {
             Select Your Child
           </h3>
           
-          {children.length === 0 ? (
+          {totalChildrenCount === 0 ? (
             <div className="text-center py-6">
               <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-500 font-body">No children assigned to your account yet.</p>
@@ -151,28 +229,41 @@ export function ParentDashboard() {
           ) : (
             <div className="space-y-3">
               <select
-                value={selectedChild}
+                value={selectedChild ? `${selectedType}:${selectedChild}` : ''}
                 onChange={(e) => {
-                  const childId = e.target.value
-                  if (childId) {
-                    selectChild(childId)
+                  const [type, childId] = e.target.value.split(':')
+                  if (childId && (type === 'registered' || type === 'manual')) {
+                    selectChild(childId, type as 'registered' | 'manual')
                   }
                 }}
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
               >
                 <option value="">Select a child...</option>
-                {children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
-                  </option>
-                ))}
+                {children.length > 0 && (
+                  <optgroup label="Registered Children">
+                    {children.map((child) => (
+                      <option key={child.id} value={`registered:${child.id}`}>
+                        {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {manualPlayers.length > 0 && (
+                  <optgroup label="Manual Players (Historical Data)">
+                    {manualPlayers.map((player) => (
+                      <option key={player.id} value={`manual:${player.id}`}>
+                        {player.name} {player.jerseyNumber ? `(#${player.jerseyNumber})` : ''} - {player.games.length} games
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
           )}
             
-            {selectedChildProfile && (
+            {(selectedChildProfile || selectedManualPlayer) && (
               <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 mt-3">
-                {selectedChildProfile.avatarUrl ? (
+                {selectedChildProfile?.avatarUrl ? (
                   <img
                     src={selectedChildProfile.avatarUrl}
                     alt="Child"
@@ -180,28 +271,46 @@ export function ParentDashboard() {
                   />
                 ) : (
                   <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                    {selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()}
+                    {selectedChildProfile ? 
+                      (selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()) :
+                      selectedManualPlayer?.name?.[0]?.toUpperCase() || '?'
+                    }
                   </div>
                 )}
                 <div>
                   <p className="font-semibold font-body text-green-800">
-                    Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
+                    Currently viewing: {selectedChildProfile ? 
+                      (selectedChildProfile.name || selectedChildProfile.email.split('@')[0]) :
+                      selectedManualPlayer?.name || 'Unknown'
+                    }
+                    {selectedType === 'manual' && (
+                      <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Historical Data</span>
+                    )}
                   </p>
-                  <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
+                  <p className="text-sm font-body text-green-600">
+                    {selectedChildProfile ? 
+                      `${selectedChildProfile.totalPoints || 0} total points` :
+                      `${selectedManualPlayer?.games.length || 0} games played`
+                    }
+                  </p>
                 </div>
               </div>
             )}
         </div>
 
         {/* Child Stats */}
-        {selectedChildProfile && (
+        {(selectedChildProfile || selectedManualPlayer) && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-3">
                 <Trophy className="w-8 h-8 text-primary-500" />
                 <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
-                  <div className="text-sm font-body text-gray-600">Total Points</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">
+                    {selectedChildProfile ? (selectedChildProfile.totalPoints || 0) : 'N/A'}
+                  </div>
+                  <div className="text-sm font-body text-gray-600">
+                    {selectedChildProfile ? 'Total Points' : 'Training Points (Historical Only)'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -336,15 +445,41 @@ export function ParentDashboard() {
                       </div>
 
                       {/* Game Info */}
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-1 text-sm text-gray-600 font-body">
-                          <MapPin className="w-4 h-4" />
-                          <span>{isHomeGame ? 'Home Game' : 'Away Game'}</span>
+                      <div className="space-y-2 mb-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1 text-sm text-gray-600 font-body">
+                            <MapPin className="w-4 h-4" />
+                            <span>{isHomeGame ? 'Home Game' : 'Away Game'}</span>
+                          </div>
+                          
+                          {game.jerseyNumber && (
+                            <div className="text-sm text-gray-600 font-body">
+                              Jersey #{game.jerseyNumber}
+                            </div>
+                          )}
                         </div>
-                        
-                        {game.jerseyNumber && (
-                          <div className="text-sm text-gray-600 font-body">
-                            Jersey #{game.jerseyNumber}
+
+                        {/* Manual Player Entry Information */}
+                        {game.participationType && game.participationType !== 'direct' && (
+                          <div className="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded-lg">
+                            <UserIcon className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                            <div className="text-xs text-blue-700 font-body">
+                              {game.participationType === 'manual' ? (
+                                <>
+                                  Historical game data linked from manual entry: <span className="font-semibold">{game.manualPlayerName}</span>
+                                  {game.manualPlayerJerseyNumber && (
+                                    <span> (#{game.manualPlayerJerseyNumber})</span>
+                                  )}
+                                </>
+                              ) : game.participationType === 'mixed' ? (
+                                <>
+                                  Includes both direct participation and historical data from manual entry: <span className="font-semibold">{game.manualPlayerName}</span>
+                                  {game.manualPlayerJerseyNumber && (
+                                    <span> (#{game.manualPlayerJerseyNumber})</span>
+                                  )}
+                                </>
+                              ) : null}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -358,7 +493,7 @@ export function ParentDashboard() {
                         >
                           <div className="flex items-center gap-3">
                             <h4 className="font-medium text-gray-900 font-body">
-                              {selectedChildProfile?.name || 'Player'}'s Stats
+                              {selectedChildProfile?.name || selectedManualPlayer?.name || 'Player'}'s Stats
                             </h4>
                             <span className="text-xs text-gray-500 font-body">
                               {game.stats.length} stat{game.stats.length !== 1 ? 's' : ''}
@@ -396,11 +531,18 @@ export function ParentDashboard() {
                               <div className="space-y-1">
                                 {game.stats.map((stat) => (
                                   <div key={stat.id} className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-600 font-body">
-                                      {stat.statType.toUpperCase()} 
-                                      {stat.quarter && ` (Q${stat.quarter})`}
-                                      {stat.timeMinute && ` ${stat.timeMinute}:00`}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-gray-600 font-body">
+                                        {stat.statType.toUpperCase()} 
+                                        {stat.quarter && ` (Q${stat.quarter})`}
+                                        {stat.timeMinute && ` ${stat.timeMinute}:00`}
+                                      </span>
+                                      {stat.source && stat.source === 'manual' && (
+                                        <span className="px-1.5 py-0.5 text-xs bg-blue-100 text-blue-700 rounded font-body">
+                                          Historical
+                                        </span>
+                                      )}
+                                    </div>
                                     <span className="text-gray-900 font-semibold font-body">
                                       +{stat.statType === '3pt' ? 3 : stat.statType === '2pt' ? 2 : stat.value}
                                     </span>
@@ -419,8 +561,8 @@ export function ParentDashboard() {
           </div>
         )}
 
-        {/* Recent Training Sessions */}
-        {selectedChild && (
+        {/* Recent Training Sessions - Only for registered children */}
+        {selectedChild && selectedType === 'registered' && (
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-6 border-b border-gray-200">
               <h3 className="text-lg font-semibold font-heading text-gray-900 flex items-center gap-2">

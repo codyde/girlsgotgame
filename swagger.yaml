@@ -673,37 +673,6 @@ paths:
           $ref: '#/components/responses/InternalServerError'
 
   # Upload Endpoints
-  /upload/single:
-    post:
-      tags:
-        - Upload
-      summary: Upload single file
-      description: Upload a single file to cloud storage
-      security:
-        - cookieAuth: []
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-      responses:
-        '200':
-          description: File uploaded successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FileUpload'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
 
   /upload/avatar:
     post:

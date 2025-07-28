@@ -15,15 +15,6 @@ export const profileSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const createProfileSchema = z.object({
-  email: z.string().email(),
-  name: z.string().nullable().optional(),
-  role: z.enum(['parent', 'player']).default('player'),
-  childId: z.string().uuid().optional(),
-  jerseyNumber: z.number().int().min(1).max(99).optional(),
-  isOnboarded: z.boolean().optional().default(false),
-  totalPoints: z.number().int().min(0).optional().default(0),
-});
 
 export const updateProfileSchema = z.object({
   name: z.string().nullable().optional(),
@@ -65,9 +56,9 @@ export const postSchema = z.object({
 
 export const createPostSchema = z.object({
   content: z.string().min(1),
-  imageUrl: z.string().url().optional(),
-  mediaId: z.string().uuid().optional(),
-  workoutId: z.string().uuid().optional(),
+  imageUrl: z.string().url().nullable().optional(),
+  mediaId: z.string().uuid().nullable().optional(),
+  workoutId: z.string().uuid().nullable().optional(),
 });
 
 export const updatePostSchema = z.object({
@@ -99,7 +90,6 @@ export const createCommentSchema = z.object({
 
 // Types
 export type Profile = z.infer<typeof profileSchema>;
-export type CreateProfile = z.infer<typeof createProfileSchema>;
 export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
 export type Workout = z.infer<typeof workoutSchema>;

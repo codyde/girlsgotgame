@@ -36,6 +36,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [showLiveActivity, setShowLiveActivity] = useState(false)
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
   const [myChildren, setMyChildren] = useState<User[]>([])
+  const [myManualPlayers, setMyManualPlayers] = useState<any[]>([])
 
   const isAdmin = user?.email === 'codydearkland@gmail.com'
   const isParent = profile?.role === 'parent'
@@ -47,6 +48,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
     }
     if (isParent) {
       fetchMyChildren()
+      fetchMyManualPlayers()
     }
   }, [gameId, isAdmin, isParent])
 
@@ -134,13 +136,34 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
 
   const fetchMyChildren = async () => {
     try {
+      // 🎯 UNIFIED SYSTEM: Get ALL children (registered + manual) in one API call
       const { data, error } = await api.getMyChildren()
       if (error) throw new Error(error)
-      setMyChildren(data || [])
+      
+      const allChildren = data || []
+      
+      // Separate registered and manual children
+      const registeredChildren = allChildren.filter(child => child.accountType === 'registered')
+      const manualChildren = allChildren
+        .filter(child => child.accountType === 'manual')
+        .map(child => ({
+          id: child.id,
+          name: child.name,
+          jerseyNumber: child.jerseyNumber
+        }))
+      
+      setMyChildren(registeredChildren)
+      setMyManualPlayers(manualChildren)
+      
+      console.log('🎯 Unified System - All children:', allChildren.length, 
+                  '(Registered:', registeredChildren.length, 'Manual:', manualChildren.length, ')')
     } catch (error) {
       console.error('Error fetching children:', error)
     }
   }
+
+  // Legacy function - now just calls fetchMyChildren
+  const fetchMyManualPlayers = () => fetchMyChildren()
 
 
   const addComment = async () => {
@@ -217,6 +240,12 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
 
 
   const addPlayerStat = async (playerId: string, statType: string, value: number = 1) => {
+    // Check if game stats are locked
+    if (game?.statsLocked && !isAdmin) {
+      toast.error('Game stats are locked. Contact an admin to make changes.')
+      return
+    }
+
     // Optimistic update
     const optimisticStat = {
       statType,
@@ -254,6 +283,12 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   }
 
   const removePlayerStat = async (statId: string) => {
+    // Check if game stats are locked
+    if (game?.statsLocked && !isAdmin) {
+      toast.error('Game stats are locked. Contact an admin to make changes.')
+      return
+    }
+
     try {
       const { error } = await api.removePlayerStat(gameId, statId)
       if (error) throw new Error(error)
@@ -367,11 +402,26 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   // Filter players based on user role
   const visiblePlayers = isParent 
     ? players.filter(player => {
-        // For parents, only show their children
+        // For parents, show their registered children AND linked manual players
         const myChildIds = myChildren.map(child => child.id)
-        return player.userId && myChildIds.includes(player.userId)
+        const myManualPlayerIds = myManualPlayers.map(mp => mp.id)
+        
+        console.log('🏀 Parent Debug - Filtering player:', {
+          playerUserId: player.userId,
+          playerManualId: player.manualPlayerId,
+          myChildIds,
+          myManualPlayerIds,
+          isRegisteredChild: player.userId && myChildIds.includes(player.userId),
+          isLinkedManualPlayer: player.manualPlayerId && myManualPlayerIds.includes(player.manualPlayerId)
+        })
+        
+        // Show if it's a registered child OR a linked manual player
+        return (player.userId && myChildIds.includes(player.userId)) || 
+               (player.manualPlayerId && myManualPlayerIds.includes(player.manualPlayerId))
       })
     : players // Admins see all players
+    
+  console.log('🏀 Parent Debug - Total players in game:', players.length, 'Visible to parent:', visiblePlayers.length)
 
   return (
     <div className="h-full flex flex-col">
@@ -419,6 +469,21 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                 )}
               </div>
             </div>
+
+            {/* Stats Locked Badge */}
+            {game.statsLocked && (
+              <div className="px-4 py-2 bg-red-100 text-red-700 text-sm font-medium font-body border-t border-red-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span>🔒</span>
+                    <span>Stats Locked by Admin</span>
+                  </div>
+                  {!isAdmin && (
+                    <span className="text-xs">Contact admin to make changes</span>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="p-6">
               {/* Date and Time */}
@@ -742,79 +807,95 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                           </div>
                           
                           {/* Quick Add Stats */}
-                          {/* Mobile layout: 2 rows (3 top, 2 bottom) with square buttons */}
-                          <div className="md:hidden space-y-1">
-                            {/* Top row - 3 buttons */}
-                            <div className="grid grid-cols-3 gap-1">
+                          {game?.statsLocked && !isAdmin ? (
+                            <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg">
+                              <div className="text-sm text-red-700 font-medium flex items-center gap-2">
+                                <span>🔒</span>
+                                Game stats are locked by admin
+                              </div>
+                              <div className="text-xs text-red-600 mt-1">
+                                Contact an admin to make changes
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {/* Mobile layout: 2 rows (3 top, 2 bottom) with square buttons */}
+                              <div className="md:hidden space-y-1">
+                                {/* Top row - 3 buttons */}
+                                <div className="grid grid-cols-3 gap-1">
+                                  <button
+                                    onClick={() => addPlayerStat(player.id, '2pt', 2)}
+                                    className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-blue-100 text-blue-700 rounded hover:bg-blue-200 active:bg-blue-300 transition-colors font-body touch-manipulation"
+                                  >
+                                    2PT
+                                  </button>
+                                  <button
+                                    onClick={() => addPlayerStat(player.id, '3pt', 3)}
+                                    className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-green-100 text-green-700 rounded hover:bg-green-200 active:bg-green-300 transition-colors font-body touch-manipulation"
+                                  >
+                                    3PT
+                                  </button>
+                                  <button
+                                    onClick={() => addPlayerStat(player.id, '1pt', 1)}
+                                    className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-purple-100 text-purple-700 rounded hover:bg-purple-200 active:bg-purple-300 transition-colors font-body touch-manipulation"
+                                  >
+                                    FT
+                                  </button>
+                                </div>
+                                {/* Bottom row - 2 buttons */}
+                                <div className="grid grid-cols-2 gap-1">
+                                  <button
+                                    onClick={() => addPlayerStat(player.id, 'steal', 1)}
+                                    className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-red-100 text-red-700 rounded hover:bg-red-200 active:bg-red-300 transition-colors font-body touch-manipulation"
+                                  >
+                                    STL
+                                  </button>
+                                  <button
+                                    onClick={() => addPlayerStat(player.id, 'rebound', 1)}
+                                    className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 active:bg-yellow-300 transition-colors font-body touch-manipulation"
+                                  >
+                                    REB
+                                  </button>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                          
+                          {/* Desktop layout: Single row with compact buttons */}
+                          {!game?.statsLocked || isAdmin ? (
+                            <div className="hidden md:grid grid-cols-5 gap-1">
                               <button
                                 onClick={() => addPlayerStat(player.id, '2pt', 2)}
-                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-blue-100 text-blue-700 rounded hover:bg-blue-200 active:bg-blue-300 transition-colors font-body touch-manipulation"
+                                className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-body"
                               >
                                 2PT
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, '3pt', 3)}
-                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-green-100 text-green-700 rounded hover:bg-green-200 active:bg-green-300 transition-colors font-body touch-manipulation"
+                                className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors font-body"
                               >
                                 3PT
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, '1pt', 1)}
-                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-purple-100 text-purple-700 rounded hover:bg-purple-200 active:bg-purple-300 transition-colors font-body touch-manipulation"
+                                className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors font-body"
                               >
                                 FT
                               </button>
-                            </div>
-                            {/* Bottom row - 2 buttons */}
-                            <div className="grid grid-cols-2 gap-1">
                               <button
                                 onClick={() => addPlayerStat(player.id, 'steal', 1)}
-                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-red-100 text-red-700 rounded hover:bg-red-200 active:bg-red-300 transition-colors font-body touch-manipulation"
+                                className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors font-body"
                               >
                                 STL
                               </button>
                               <button
                                 onClick={() => addPlayerStat(player.id, 'rebound', 1)}
-                                className="h-8 w-full flex items-center justify-center text-xs font-semibold bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 active:bg-yellow-300 transition-colors font-body touch-manipulation"
+                                className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition-colors font-body"
                               >
                                 REB
                               </button>
                             </div>
-                          </div>
-                          
-                          {/* Desktop layout: Single row with compact buttons */}
-                          <div className="hidden md:grid grid-cols-5 gap-1">
-                            <button
-                              onClick={() => addPlayerStat(player.id, '2pt', 2)}
-                              className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors font-body"
-                            >
-                              2PT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, '3pt', 3)}
-                              className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors font-body"
-                            >
-                              3PT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, '1pt', 1)}
-                              className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors font-body"
-                            >
-                              FT
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, 'steal', 1)}
-                              className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors font-body"
-                            >
-                              STL
-                            </button>
-                            <button
-                              onClick={() => addPlayerStat(player.id, 'rebound', 1)}
-                              className="px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 transition-colors font-body"
-                            >
-                              REB
-                            </button>
-                          </div>
+                          ) : null}
                           
                           {/* Show detailed stats if any */}
                           {stats.length > 0 && (
@@ -831,12 +912,14 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                                   {stats.map((stat) => (
                                     <div key={stat.id} className="flex items-center justify-between text-xs bg-gray-50 rounded px-2 py-1">
                                       <span>{stat.statType.toUpperCase()} (+{stat.value})</span>
-                                      <button
-                                        onClick={() => removePlayerStat(stat.id)}
-                                        className="text-red-500 hover:text-red-700"
-                                      >
-                                        <X className="w-3 h-3" />
-                                      </button>
+                                      {(!game?.statsLocked || isAdmin) && (
+                                        <button
+                                          onClick={() => removePlayerStat(stat.id)}
+                                          className="text-red-500 hover:text-red-700"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
                                     </div>
                                   ))}
                                 </div>

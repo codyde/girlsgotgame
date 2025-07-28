@@ -226,16 +226,17 @@ Response: Array<comment_objects_with_user_data>
 
 ### File Upload System
 
-#### Upload Single File
+#### Upload Media File
 ```http
-POST /api/upload/single
+POST /api/upload/media
 Headers: credentials: include
 Body: FormData with 'file' field
 Response: {
   url: string,
   name: string,
   size: number,
-  type: string
+  type: string,
+  mediaId?: string
 }
 ```
 

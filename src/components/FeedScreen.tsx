@@ -534,10 +534,21 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   const toggleLike = async (postId: string) => {
     if (!user) return
 
-    // Optimistic update: immediately update UI
+    // Get current like state
+    const post = posts.find(p => p.id === postId)
+    const hasLike = post && 'userHasLiked' in post 
+      ? (post as any).userHasLiked 
+      : (likes[postId] || []).some(like => like.user_id === user.id)
+
+    // Optimistic update: immediately update post's userHasLiked field
+    setPosts(current => current.map(p => 
+      p.id === postId 
+        ? { ...p, userHasLiked: !hasLike } as any
+        : p
+    ))
+
+    // Also update likes state for consistency with existing logic
     const currentLikes = likes[postId] || []
-    const hasLike = currentLikes.some(like => like.user_id === user.id)
-    
     if (hasLike) {
       // Optimistically remove like
       setLikes(current => ({
@@ -571,7 +582,14 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
     } catch (error: unknown) {
       console.error('toggleLike error:', error)
       
-      // Revert optimistic update on error
+      // Revert optimistic update on error - restore original userHasLiked state
+      setPosts(current => current.map(p => 
+        p.id === postId 
+          ? { ...p, userHasLiked: hasLike } as any
+          : p
+      ))
+      
+      // Revert likes state changes
       if (hasLike) {
         // Restore the like that was optimistically removed
         const revertLike: Like = {
@@ -685,6 +703,14 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
 
   const isLikedByUser = (postId: string) => {
     if (!user) return false
+    
+    // Check if the post has userHasLiked field from API
+    const post = posts.find(p => p.id === postId)
+    if (post && 'userHasLiked' in post) {
+      return (post as any).userHasLiked
+    }
+    
+    // Fallback to checking likes array for optimistic updates
     const postLikes = likes[postId] || []
     return postLikes.some(like => like.user_id === user.id)
   }

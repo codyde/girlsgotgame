@@ -9,9 +9,10 @@ import { emitToAll } from '../lib/socket';
 const router = Router();
 
 // Get feed posts with user and workout data
-router.get('/feed', async (req, res) => {
+router.get('/feed', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { limit = 20, offset = 0 } = req.query;
+    const currentUserId = req.user!.id;
 
     const feedPosts = await db.query.posts.findMany({
       orderBy: [desc(posts.createdAt)],
@@ -80,7 +81,7 @@ router.get('/feed', async (req, res) => {
       commentsCount: post.postType === 'game' && post.gameId 
         ? gameCommentCounts[post.gameId] || 0 
         : post.comments.length,
-      userHasLiked: false // Will be set properly when user is authenticated
+      userHasLiked: post.likes.some(like => like.userId === currentUserId)
     }));
 
     res.json(transformedPosts);

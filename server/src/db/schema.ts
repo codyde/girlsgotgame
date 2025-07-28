@@ -19,6 +19,12 @@ export const user = pgTable('user', {
   isOnboarded: boolean('is_onboarded').default(false).notNull(),
   isVerified: boolean('isverified').default(false).notNull(),
   jerseyNumber: integer('jersey_number'),
+  
+  // 🎯 UNIFIED SYSTEM: Fields for unified player system
+  accountType: varchar('account_type', { length: 20 }).default('registered'), // 'registered' | 'manual'
+  hasLoginAccess: boolean('has_login_access').default(true),
+  createdByUserId: varchar('created_by_user_id', { length: 255 }), // Who created this user (for manual players)
+  migratedFromManualPlayerId: uuid('migrated_from_manual_player_id'), // Reference to original manual player
 });
 
 export const session = pgTable('session', {
@@ -194,6 +200,7 @@ export const games = pgTable('games', {
   notes: text('notes'), // Game notes/description
   status: varchar('status', { length: 20 }).default('upcoming').notNull(), // 'upcoming' | 'live' | 'completed'
   isSharedToFeed: boolean('is_shared_to_feed').default(false).notNull(), // Track if shared to social feed
+  statsLocked: boolean('stats_locked').default(false).notNull(), // When true, prevents players from adding/modifying stats
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
@@ -432,6 +439,7 @@ export const gamePlayers = pgTable('game_players', {
   gameId: uuid('game_id').notNull(),
   userId: varchar('user_id', { length: 255 }), // NULL for manual players
   manualPlayerId: uuid('manual_player_id'), // Reference to manual_players table
+  unifiedUserId: varchar('unified_user_id', { length: 255 }), // NEW: Unified reference to user table
   jerseyNumber: integer('jersey_number'),
   isStarter: boolean('is_starter').default(false).notNull(),
   minutesPlayed: integer('minutes_played').default(0).notNull(),
@@ -444,6 +452,7 @@ export const manualPlayers = pgTable('manual_players', {
   name: varchar('name', { length: 255 }).notNull(),
   jerseyNumber: integer('jersey_number'),
   linkedUserId: varchar('linked_user_id', { length: 255 }), // Admin can link to registered user
+  linkedParentId: varchar('linked_parent_id', { length: 255 }), // Admin can link to parent (for unregistered children)
   linkedBy: varchar('linked_by', { length: 255 }), // Admin who made the link
   linkedAt: timestamp('linked_at'),
   notes: text('notes'), // Additional notes about the player
@@ -493,6 +502,10 @@ export const gamePlayersRelations = relations(gamePlayers, ({ one }) => ({
 export const manualPlayersRelations = relations(manualPlayers, ({ one }) => ({
   linkedUser: one(user, {
     fields: [manualPlayers.linkedUserId],
+    references: [user.id],
+  }),
+  linkedParent: one(user, {
+    fields: [manualPlayers.linkedParentId],
     references: [user.id],
   }),
   linker: one(user, {
