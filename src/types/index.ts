@@ -115,6 +115,7 @@ export interface Game {
   notes: string | null
   status: 'upcoming' | 'live' | 'completed'
   isSharedToFeed: boolean
+  statsLocked: boolean
   createdAt: string
   updatedAt: string
 }
@@ -123,7 +124,10 @@ export interface GameWithUserStats extends Game {
   gamePlayerId: string
   jerseyNumber: number | null
   isStarter: boolean
-  stats: GameStat[]
+  participationType?: 'direct' | 'manual' | 'mixed'
+  manualPlayerName?: string
+  manualPlayerJerseyNumber?: number | null
+  stats: (GameStat & { source?: 'direct' | 'manual' })[]
 }
 
 export interface GameComment {
@@ -161,12 +165,14 @@ export interface ManualPlayer {
   name: string
   jerseyNumber: number | null
   linkedUserId: string | null
+  linkedParentId: string | null
   linkedBy: string | null
   linkedAt: string | null
   notes: string | null
   createdAt: string
   updatedAt: string
   linkedUser?: User
+  linkedParent?: User
 }
 
 export interface GamePlayer {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X, Calendar, Share, Flag, CheckCircle, XCircle, Play } from 'lucide-react'
+import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X, Calendar, Share, Flag, CheckCircle, XCircle, Play, Lock, Unlock } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
 import { User, Workout, TeamWithMemberCount, TeamMember, Game } from '../types'
@@ -450,6 +450,27 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
       refreshGames()
     } catch (error: unknown) {
       toast.error('Error sharing to feed: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const toggleGameStatsLock = async (gameId: string, currentlyLocked: boolean, teamName: string, opponentTeam: string) => {
+    const action = currentlyLocked ? 'unlock' : 'lock'
+    const confirmMessage = currentlyLocked 
+      ? `Are you sure you want to unlock stats for ${teamName} vs ${opponentTeam}? Players and parents will be able to add/modify stats again.`
+      : `Are you sure you want to lock stats for ${teamName} vs ${opponentTeam}? This will prevent players and parents from adding or modifying stats.`
+    
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    try {
+      const { error } = await api.updateGameStatsLock(gameId, !currentlyLocked)
+      if (error) throw new Error(error)
+      
+      toast.success(`Game stats ${action}ed successfully!`)
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error(`Error ${action}ing stats: ` + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -1091,6 +1112,12 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                   Shared
                                 </span>
                               )}
+                              {game.statsLocked && (
+                                <span className="px-2 py-1 text-xs font-medium font-body rounded-full bg-red-100 text-red-700 flex items-center gap-1">
+                                  <Lock className="w-3 h-3" />
+                                  Stats Locked
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2">
                               {!game.isSharedToFeed && (
@@ -1105,6 +1132,20 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                   <Share className="w-4 h-4" />
                                 </button>
                               )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  toggleGameStatsLock(game.id, game.statsLocked || false, game.teamName, game.opponentTeam)
+                                }}
+                                className={`p-2 rounded-lg transition-colors ${
+                                  game.statsLocked 
+                                    ? 'text-red-500 hover:text-red-700 hover:bg-red-50' 
+                                    : 'text-yellow-500 hover:text-yellow-700 hover:bg-yellow-50'
+                                }`}
+                                title={game.statsLocked ? 'Unlock Stats' : 'Lock Stats'}
+                              >
+                                {game.statsLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                              </button>
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation()
@@ -1309,9 +1350,20 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                     const linkedManualPlayers = manualPlayers.filter(mp => mp.linkedUserId === child.childId);
                                     if (linkedManualPlayers.length > 0) {
                                       return (
-                                        <div className="mt-1">
-                                          <div className="text-xs font-body text-blue-600">
-                                            Manual players: {linkedManualPlayers.map(mp => mp.name).join(', ')}
+                                        <div className="mt-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+                                          <div className="text-xs font-semibold font-body text-blue-700 mb-1">
+                                            Linked Manual Players:
+                                          </div>
+                                          {linkedManualPlayers.map((mp, index) => (
+                                            <div key={mp.id} className="text-xs font-body text-blue-600">
+                                              • {mp.name} {mp.jerseyNumber ? `(#${mp.jerseyNumber})` : ''}
+                                              {mp.notes && (
+                                                <span className="text-gray-500 ml-1">- {mp.notes}</span>
+                                              )}
+                                            </div>
+                                          ))}
+                                          <div className="text-xs font-body text-blue-500 mt-1 italic">
+                                            ℹ️ Parents can now see stats from these manual entries
                                           </div>
                                         </div>
                                       );
@@ -1332,6 +1384,151 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Manual Player to Parent Linking */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold font-heading text-gray-900">Link Manual Players to Parents</h3>
+              <p className="text-sm font-body text-gray-600">For when a child hasn't registered but their parent has - link manual players directly to parents</p>
+            </div>
+            
+            <div className="p-4">
+              {/* Parent Selection */}
+              <div className="mb-6">
+                <h4 className="text-md font-medium font-heading text-gray-900 mb-3">Select Parent to Manage</h4>
+                <select
+                  value={selectedParent || ''}
+                  onChange={(e) => setSelectedParent(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                >
+                  <option value="">Select a parent to view/manage their manual players...</option>
+                  {profiles.filter(p => p.role === 'parent').map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.name || profile.email.split('@')[0]} ({profile.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedParent && (
+                <div className="space-y-4">
+                  {/* Currently Linked Manual Players */}
+                  <div>
+                    <h5 className="text-sm font-medium font-heading text-gray-900 mb-3">
+                      Manual Players Linked to {profiles.find(p => p.id === selectedParent)?.name || 'this parent'}:
+                    </h5>
+                    
+                    {(() => {
+                      const linkedToParent = manualPlayers.filter(mp => mp.linkedParentId === selectedParent);
+                      if (linkedToParent.length === 0) {
+                        return (
+                          <div className="text-center py-4 bg-gray-50 rounded-lg">
+                            <p className="text-gray-500 font-body text-sm">No manual players linked to this parent yet</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          {linkedToParent.map((player) => (
+                            <div key={player.id} className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-lg">
+                              <div>
+                                <div className="font-medium font-body text-green-800">
+                                  {player.name}
+                                  {player.jerseyNumber && (
+                                    <span className="ml-2 text-sm text-green-600">#{player.jerseyNumber}</span>
+                                  )}
+                                </div>
+                                {player.notes && (
+                                  <div className="text-sm text-green-600 font-body mt-1">{player.notes}</div>
+                                )}
+                                <div className="text-xs text-green-500 font-body">
+                                  Linked: {new Date(player.linkedAt!).toLocaleDateString()}
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (confirm(`Unlink ${player.name} from this parent?`)) {
+                                    try {
+                                      const { error } = await api.unlinkManualPlayerFromParent(player.id)
+                                      if (error) throw new Error(error)
+                                      toast.success('Manual player unlinked from parent!')
+                                      refreshManualPlayers()
+                                    } catch (error: unknown) {
+                                      toast.error('Error unlinking manual player: ' + (error instanceof Error ? error.message : String(error)))
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-body"
+                              >
+                                Unlink
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Available Manual Players to Link */}
+                  <div>
+                    <h5 className="text-sm font-medium font-heading text-gray-900 mb-3">
+                      Available Manual Players to Link:
+                    </h5>
+                    
+                    {(() => {
+                      const availableToLink = manualPlayers.filter(mp => !mp.linkedParentId && !mp.linkedUserId);
+                      if (availableToLink.length === 0) {
+                        return (
+                          <div className="text-center py-4 bg-gray-50 rounded-lg">
+                            <p className="text-gray-500 font-body text-sm">No available manual players to link</p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {availableToLink.map((player) => (
+                            <div key={player.id} className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                              <div>
+                                <div className="font-medium font-body text-blue-800">
+                                  {player.name}
+                                  {player.jerseyNumber && (
+                                    <span className="ml-2 text-sm text-blue-600">#{player.jerseyNumber}</span>
+                                  )}
+                                </div>
+                                {player.notes && (
+                                  <div className="text-sm text-blue-600 font-body mt-1">{player.notes}</div>
+                                )}
+                                <div className="text-xs text-blue-500 font-body">
+                                  Created: {new Date(player.createdAt).toLocaleDateString()}
+                                </div>
+                              </div>
+                              <button
+                                onClick={async () => {
+                                  if (confirm(`Link ${player.name} to this parent?`)) {
+                                    try {
+                                      const { error } = await api.linkManualPlayerToParent(player.id, selectedParent)
+                                      if (error) throw new Error(error)
+                                      toast.success('Manual player linked to parent!')
+                                      refreshManualPlayers()
+                                    } catch (error: unknown) {
+                                      toast.error('Error linking manual player: ' + (error instanceof Error ? error.message : String(error)))
+                                    }
+                                  }
+                                }}
+                                className="px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors font-body"
+                              >
+                                Link
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
                 </div>
               )}
             </div>
@@ -1487,55 +1684,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               ))}
             </div>
           )}
-
-          {/* Unlinked Manual Players Helper */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold font-heading text-gray-900">Unlinked Manual Players</h3>
-              <p className="text-sm font-body text-gray-600">These manual players haven't been linked to any registered users yet</p>
-            </div>
-            <div className="p-4">
-              {(() => {
-                const unlinkedPlayers = manualPlayers.filter(mp => !mp.linkedUserId);
-                if (unlinkedPlayers.length === 0) {
-                  return (
-                    <div className="text-center py-4">
-                      <p className="text-gray-500 font-body">All manual players are linked!</p>
-                    </div>
-                  );
-                }
-                return (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {unlinkedPlayers.map((player) => (
-                      <div key={player.id} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                        <div>
-                          <div className="font-medium font-body text-gray-900">
-                            {player.name}
-                            {player.jerseyNumber && (
-                              <span className="ml-2 text-sm text-gray-500">#{player.jerseyNumber}</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500 font-body">
-                            Added: {new Date(player.createdAt).toLocaleDateString()}
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => {
-                            setCurrentTab('manual-players');
-                            setSelectedManualPlayer(player.id);
-                            setShowLinkManualPlayer(true);
-                          }}
-                          className="px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors font-body"
-                        >
-                          Link
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
         </div>
       ) : currentTab === 'manual-players' ? (
         /* Manual Players Management */
@@ -1555,6 +1703,21 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                   <Plus className="w-4 h-4" />
                   Link Player
                 </button>
+              </div>
+
+              {/* Parent Impact Notice */}
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="text-sm font-semibold font-body text-blue-800">Parent Dashboard Integration</h4>
+                    <p className="text-sm font-body text-blue-700 mt-1">
+                      When you link manual players to registered users, parents will automatically see their children's 
+                      historical game stats from manual entries in their parent dashboard. This includes games played before 
+                      the child registered in the app.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {/* Link Manual Player Form */}
@@ -1680,6 +1843,54 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                   ))}
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Unlinked Manual Players Helper */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+            <div className="p-4 border-b border-gray-200">
+              <h3 className="text-lg font-semibold font-heading text-gray-900">Unlinked Manual Players</h3>
+              <p className="text-sm font-body text-gray-600">These manual players haven't been linked to any registered users yet</p>
+            </div>
+            <div className="p-4">
+              {(() => {
+                const unlinkedPlayers = manualPlayers.filter(mp => !mp.linkedUserId);
+                if (unlinkedPlayers.length === 0) {
+                  return (
+                    <div className="text-center py-4">
+                      <p className="text-gray-500 font-body">All manual players are linked!</p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {unlinkedPlayers.map((player) => (
+                      <div key={player.id} className="flex items-center justify-between p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div>
+                          <div className="font-medium font-body text-gray-900">
+                            {player.name}
+                            {player.jerseyNumber && (
+                              <span className="ml-2 text-sm text-gray-500">#{player.jerseyNumber}</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-500 font-body">
+                            Added: {new Date(player.createdAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setSelectedManualPlayer(player.id);
+                            setShowLinkManualPlayer(true);
+                          }}
+                          className="px-2 py-1 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors font-body"
+                        >
+                          Link
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

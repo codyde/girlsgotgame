@@ -128,43 +128,6 @@ const saveMediaRecord = async (
   }
 };
 
-// Upload single file
-router.post('/single', upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file provided' });
-    }
-
-    const fileName = generateFileName(req.file.originalname);
-    const contentType = req.file.mimetype;
-
-    // Upload to R2
-    const command = new PutObjectCommand({
-      Bucket: R2_BUCKET_NAME,
-      Key: fileName,
-      Body: req.file.buffer,
-      ContentType: contentType,
-    });
-
-    await r2Client.send(command);
-
-    // Construct public URL
-    const url = `https://${R2_PUBLIC_DOMAIN}/${fileName}`;
-
-    res.json({
-      url,
-      name: fileName,
-      size: req.file.size,
-      type: contentType,
-    });
-  } catch (error) {
-    console.error('❌ Upload error:', error);
-    res.status(500).json({ 
-      error: 'Upload failed', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    });
-  }
-});
 
 // Upload avatar (with size limit)
 router.post('/avatar', upload.single('file'), async (req, res) => {

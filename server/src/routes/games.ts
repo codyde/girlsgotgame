@@ -1,8 +1,8 @@
 import express from 'express';
 import { db } from '../db/index';
 import { games, gameComments, user as userTable, posts, gamePlayers, manualPlayers, gameStats, gameActivities, parentChildRelations } from '../db/schema';
-import { eq, asc, desc, like, or, and } from 'drizzle-orm';
-import { requireAuth } from '../middleware/auth';
+import { eq, asc, desc, like, or, and, isNull, isNotNull, inArray } from 'drizzle-orm';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { getSocketIO } from '../lib/socket';
 
 const router = express.Router();
@@ -68,7 +68,7 @@ router.get('/', async (req, res) => {
         .from(games)
         .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
         .where(
-          or(...childUserIds.map(childId => eq(gamePlayers.userId, childId)))
+          or(...childUserIds.map(childId => eq(gamePlayers.unifiedUserId, childId)))
         )
         .groupBy(
           games.id,
@@ -104,7 +104,7 @@ router.get('/', async (req, res) => {
         })
         .from(games)
         .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
-        .where(eq(gamePlayers.userId, user.id))
+        .where(eq(gamePlayers.unifiedUserId, user.id))
         .orderBy(asc(games.gameDate));
       
       if (playerGames.length === 0) {
@@ -175,6 +175,16 @@ router.patch('/:gameId/score', requireAuth, async (req, res) => {
     const { gameId } = req.params;
     const { homeScore, awayScore } = req.body;
 
+    // Check if game stats are locked (admins can still update scores even when locked)
+    const [game] = await db
+      .select({ statsLocked: games.statsLocked })
+      .from(games)
+      .where(eq(games.id, gameId));
+
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
     if (typeof homeScore !== 'number' || typeof awayScore !== 'number') {
       return res.status(400).json({ error: 'Home and away scores must be numbers' });
     }
@@ -208,6 +218,58 @@ router.patch('/:gameId/score', requireAuth, async (req, res) => {
   } catch (error) {
     console.error('Error updating game score:', error);
     res.status(500).json({ error: 'Failed to update game score' });
+  }
+});
+
+// Lock/unlock game stats (admin only)
+router.patch('/:gameId/stats-lock', requireAuth, async (req, res) => {
+  try {
+    // Check if user is admin
+    const user = req.user!;
+    const isAdmin = user.email === 'codydearkland@gmail.com';
+    
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    const { gameId } = req.params;
+    const { statsLocked } = req.body;
+
+    if (typeof statsLocked !== 'boolean') {
+      return res.status(400).json({ error: 'statsLocked must be a boolean' });
+    }
+
+    const [updatedGame] = await db
+      .update(games)
+      .set({ 
+        statsLocked,
+        updatedAt: new Date()
+      })
+      .where(eq(games.id, gameId))
+      .returning();
+
+    if (!updatedGame) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    // Emit stats lock update via websocket
+    const io = getSocketIO();
+    if (io) {
+      io.emit('game:stats-lock-updated', {
+        gameId,
+        statsLocked,
+        updatedBy: user.id
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: `Game stats ${statsLocked ? 'locked' : 'unlocked'} successfully`,
+      game: updatedGame 
+    });
+  } catch (error) {
+    console.error('Error updating game stats lock:', error);
+    res.status(500).json({ error: 'Failed to update game stats lock' });
   }
 });
 
@@ -557,7 +619,7 @@ router.get('/:gameId/players', async (req, res) => {
   }
 });
 
-// Add registered player to game (admin only)
+// Add player to game (admin only) - works for both registered and manual players
 router.post('/:gameId/players', requireAuth, async (req, res) => {
   try {
     const user = req.user!;
@@ -574,40 +636,46 @@ router.post('/:gameId/players', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'User ID is required' });
     }
 
-    // Check if player is already added to this game
+    // 🎯 UNIFIED SYSTEM: Check if player is already added to this game using unified_user_id
     const [existingPlayer] = await db
       .select()
       .from(gamePlayers)
       .where(and(
         eq(gamePlayers.gameId, gameId),
-        eq(gamePlayers.userId, userId)
+        eq(gamePlayers.unifiedUserId, userId)
       ));
 
     if (existingPlayer) {
       return res.status(400).json({ error: 'Player is already added to this game' });
     }
 
+    // 🎯 UNIFIED SYSTEM: Insert using unified_user_id
     const [newGamePlayer] = await db
       .insert(gamePlayers)
       .values({
         gameId,
-        userId,
+        unifiedUserId: userId,
         jerseyNumber: jerseyNumber || null,
         isStarter: isStarter || false,
       })
       .returning();
 
-    // Log activity
+    // Log activity - get player name from unified user table
     const [targetUser] = await db
-      .select({ name: userTable.name })
+      .select({ 
+        name: userTable.name,
+        accountType: userTable.accountType 
+      })
       .from(userTable)
       .where(eq(userTable.id, userId));
 
+    const playerType = targetUser[0]?.accountType === 'manual' ? 'manual' : 'registered';
+    
     await db.insert(gameActivities).values({
       gameId,
       activityType: 'player_added',
-      description: `Added registered player ${targetUser[0]?.name || 'Unknown'} to the game`,
-      metadata: JSON.stringify({ playerId: newGamePlayer.id, userId }),
+      description: `Added ${playerType} player ${targetUser[0]?.name || 'Unknown'} to the game`,
+      metadata: JSON.stringify({ playerId: newGamePlayer.id, unifiedUserId: userId }),
       performedBy: user.id,
     });
 
@@ -618,7 +686,7 @@ router.post('/:gameId/players', requireAuth, async (req, res) => {
   }
 });
 
-// Add manual player to game (admin only)
+// Create new manual player and add to game (admin only)
 router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
   try {
     const user = req.user!;
@@ -635,45 +703,58 @@ router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'Player name is required' });
     }
 
-    // Check if manual player with this name already exists
-    let manualPlayer = await db
+    // 🎯 UNIFIED SYSTEM: Check if manual player with this name already exists in unified user table
+    let existingUser = await db
       .select()
-      .from(manualPlayers)
-      .where(eq(manualPlayers.name, name.trim()))
+      .from(userTable)
+      .where(and(
+        eq(userTable.name, name.trim()),
+        eq(userTable.accountType, 'manual')
+      ))
       .limit(1);
 
-    // Create manual player if doesn't exist
-    if (manualPlayer.length === 0) {
-      const [newManualPlayer] = await db
-        .insert(manualPlayers)
+    let unifiedUserId;
+    
+    // Create manual player in unified user table if doesn't exist
+    if (existingUser.length === 0) {
+      const [newUser] = await db
+        .insert(userTable)
         .values({
           name: name.trim(),
+          email: `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}@placeholder.com`,
+          accountType: 'manual',
+          hasLoginAccess: false,
           jerseyNumber: jerseyNumber || null,
           notes: notes || null,
+          isVerified: false,
+          onboardingCompleted: true,
         })
         .returning();
       
-      manualPlayer = [newManualPlayer];
+      unifiedUserId = newUser.id;
+    } else {
+      unifiedUserId = existingUser[0].id;
     }
 
-    // Check if this manual player is already added to this game
+    // 🎯 UNIFIED SYSTEM: Check if this player is already added to this game using unified_user_id
     const [existingGamePlayer] = await db
       .select()
       .from(gamePlayers)
       .where(and(
         eq(gamePlayers.gameId, gameId),
-        eq(gamePlayers.manualPlayerId, manualPlayer[0].id)
+        eq(gamePlayers.unifiedUserId, unifiedUserId)
       ));
 
     if (existingGamePlayer) {
-      return res.status(400).json({ error: 'This manual player is already added to this game' });
+      return res.status(400).json({ error: 'This player is already added to this game' });
     }
 
+    // 🎯 UNIFIED SYSTEM: Insert using unified_user_id
     const [newGamePlayer] = await db
       .insert(gamePlayers)
       .values({
         gameId,
-        manualPlayerId: manualPlayer[0].id,
+        unifiedUserId: unifiedUserId,
         jerseyNumber: jerseyNumber || null,
         isStarter: isStarter || false,
       })
@@ -684,13 +765,20 @@ router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
       gameId,
       activityType: 'player_added',
       description: `Added manual player ${name.trim()} to the game`,
-      metadata: JSON.stringify({ playerId: newGamePlayer.id, manualPlayerId: manualPlayer[0].id }),
+      metadata: JSON.stringify({ playerId: newGamePlayer.id, unifiedUserId: unifiedUserId }),
       performedBy: user.id,
     });
 
     res.status(201).json({
       ...newGamePlayer,
-      manualPlayer: manualPlayer[0],
+      user: {
+        id: unifiedUserId,
+        name: name.trim(),
+        accountType: 'manual',
+        hasLoginAccess: false,
+        jerseyNumber: jerseyNumber || null,
+        notes: notes || null,
+      },
     });
   } catch (error) {
     console.error('Error adding manual player to game:', error);
@@ -736,6 +824,20 @@ router.post('/:gameId/players/:playerId/stats', requireAuth, async (req, res) =>
       return res.status(400).json({ error: 'Invalid stat type' });
     }
 
+    // Check if game stats are locked (only admins can bypass this)
+    const [game] = await db
+      .select({ statsLocked: games.statsLocked })
+      .from(games)
+      .where(eq(games.id, gameId));
+
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.statsLocked && !isAdmin) {
+      return res.status(403).json({ error: 'Game stats are locked. Contact an admin to make changes.' });
+    }
+
     // Verify game player exists
     const [gamePlayer] = await db
       .select()
@@ -752,14 +854,14 @@ router.post('/:gameId/players/:playerId/stats', requireAuth, async (req, res) =>
     // Check permissions: admin or parent of the player
     let hasPermission = isAdmin;
     
-    if (!isAdmin && user.role === 'parent' && gamePlayer.userId) {
-      // Check if this parent has permission to manage this player's stats
+    if (!isAdmin && user.role === 'parent' && gamePlayer.unifiedUserId) {
+      // 🎯 UNIFIED SYSTEM: Check if this parent has permission to manage this player's stats
       const parentRelation = await db
         .select()
         .from(parentChildRelations)
         .where(and(
           eq(parentChildRelations.parentId, user.id),
-          eq(parentChildRelations.childId, gamePlayer.userId)
+          eq(parentChildRelations.unifiedChildId, gamePlayer.unifiedUserId)
         ))
         .limit(1);
       
@@ -783,20 +885,14 @@ router.post('/:gameId/players/:playerId/stats', requireAuth, async (req, res) =>
       })
       .returning();
 
-    // Get player name for activity log
+    // 🎯 UNIFIED SYSTEM: Get player name for activity log
     let playerName = 'Unknown Player';
-    if (gamePlayer.userId) {
+    if (gamePlayer.unifiedUserId) {
       const [playerUser] = await db
         .select({ name: userTable.name })
         .from(userTable)
-        .where(eq(userTable.id, gamePlayer.userId));
+        .where(eq(userTable.id, gamePlayer.unifiedUserId));
       playerName = playerUser?.name || 'Unknown Player';
-    } else if (gamePlayer.manualPlayerId) {
-      const [manualPlayer] = await db
-        .select({ name: manualPlayers.name })
-        .from(manualPlayers)
-        .where(eq(manualPlayers.id, gamePlayer.manualPlayerId));
-      playerName = manualPlayer?.name || 'Unknown Player';
     }
 
     // Auto-update game score for scoring stats
@@ -935,6 +1031,20 @@ router.delete('/:gameId/stats/:statId', requireAuth, async (req, res) => {
 
     const { gameId, statId } = req.params;
 
+    // Check if game stats are locked (only admins can bypass this)
+    const [game] = await db
+      .select({ statsLocked: games.statsLocked })
+      .from(games)
+      .where(eq(games.id, gameId));
+
+    if (!game) {
+      return res.status(404).json({ error: 'Game not found' });
+    }
+
+    if (game.statsLocked && !isAdmin) {
+      return res.status(403).json({ error: 'Game stats are locked. Contact an admin to make changes.' });
+    }
+
     // Get stat details before deletion for activity log
     const [stat] = await db
       .select({
@@ -953,12 +1063,11 @@ router.delete('/:gameId/stats/:statId', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Stat not found' });
     }
 
-    // Get player details and check permissions
+    // 🎯 UNIFIED SYSTEM: Get player details and check permissions
     const [gamePlayer] = await db
       .select()
       .from(gamePlayers)
-      .leftJoin(userTable, eq(gamePlayers.userId, userTable.id))
-      .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+      .innerJoin(userTable, eq(gamePlayers.unifiedUserId, userTable.id))
       .where(eq(gamePlayers.id, stat.gamePlayerId));
 
     if (!gamePlayer) {
@@ -968,14 +1077,14 @@ router.delete('/:gameId/stats/:statId', requireAuth, async (req, res) => {
     // Check permissions: admin or parent of the player
     let hasPermission = isAdmin;
     
-    if (!isAdmin && user.role === 'parent' && gamePlayer.game_players.userId) {
-      // Check if this parent has permission to manage this player's stats
+    if (!isAdmin && user.role === 'parent' && gamePlayer.game_players.unifiedUserId) {
+      // 🎯 UNIFIED SYSTEM: Check if this parent has permission to manage this player's stats
       const parentRelation = await db
         .select()
         .from(parentChildRelations)
         .where(and(
           eq(parentChildRelations.parentId, user.id),
-          eq(parentChildRelations.childId, gamePlayer.game_players.userId)
+          eq(parentChildRelations.unifiedChildId, gamePlayer.game_players.unifiedUserId)
         ))
         .limit(1);
       
@@ -986,12 +1095,8 @@ router.delete('/:gameId/stats/:statId', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Permission denied: You can only remove stats for your own children' });
     }
 
-    let playerName = 'Unknown Player';
-    if (gamePlayer.game_players.userId) {
-      playerName = gamePlayer.user_table?.name || 'Unknown Player';
-    } else if (gamePlayer.game_players.manualPlayerId) {
-      playerName = gamePlayer.manual_players?.name || 'Unknown Player';
-    }
+    // 🎯 UNIFIED SYSTEM: Get player name from unified user table
+    let playerName = gamePlayer.user_table?.name || 'Unknown Player';
 
     // Auto-update game score for scoring stats (subtract points)
     if (['2pt', '3pt', '1pt'].includes(stat.statType)) {
@@ -1190,55 +1295,92 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Permission denied: You can only view games for your own children' });
     }
 
-    // Get games where the user participated
-    const userGames = await db
-      .select({
-        id: games.id,
-        teamName: games.teamName,
-        isHome: games.isHome,
-        opponentTeam: games.opponentTeam,
-        gameDate: games.gameDate,
-        homeScore: games.homeScore,
-        awayScore: games.awayScore,
-        notes: games.notes,
-        status: games.status,
-        isSharedToFeed: games.isSharedToFeed,
-        createdAt: games.createdAt,
-        updatedAt: games.updatedAt,
-        gamePlayerId: gamePlayers.id,
-        jerseyNumber: gamePlayers.jerseyNumber,
-        isStarter: gamePlayers.isStarter,
-      })
-      .from(games)
-      .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
-      .where(eq(gamePlayers.userId, userId))
-      .orderBy(desc(games.gameDate));
+    // 🎯 UNIFIED SYSTEM: Get all games where the user participated using unified_user_id
+    const gamePlayerRecords = await db
+      .select()
+      .from(gamePlayers)
+      .where(eq(gamePlayers.unifiedUserId, userId));
 
-    // For each game, get the user's stats
-    const gamesWithStats = await Promise.all(
-      userGames.map(async (game) => {
-        const stats = await db
-          .select({
-            id: gameStats.id,
-            statType: gameStats.statType,
-            value: gameStats.value,
-            quarter: gameStats.quarter,
-            timeMinute: gameStats.timeMinute,
-            createdAt: gameStats.createdAt,
-          })
-          .from(gameStats)
-          .where(and(
-            eq(gameStats.gameId, game.id),
-            eq(gameStats.gamePlayerId, game.gamePlayerId)
-          ))
-          .orderBy(desc(gameStats.createdAt));
+    if (gamePlayerRecords.length === 0) {
+      return res.json([]);
+    }
 
-        return {
-          ...game,
-          stats: stats || [],
-        };
-      })
+    // Get the actual games - use individual queries to avoid Drizzle recursion issues
+    const gameIds = gamePlayerRecords.map(gp => gp.gameId);
+    const gamePromises = gameIds.map(gameId => 
+      db.select().from(games).where(eq(games.id, gameId)).limit(1)
     );
+    
+    const gameResults = await Promise.all(gamePromises);
+    const userGames = gameResults.flat().sort((a, b) => 
+      new Date(b.gameDate).getTime() - new Date(a.gameDate).getTime()
+    );
+
+    // For each game, get the user's stats with error handling
+    let gamesWithStats;
+    try {
+      gamesWithStats = await Promise.all(
+        userGames.map(async (game) => {
+          try {
+            // Find the game player record for this user and game
+            const gamePlayerRecord = gamePlayerRecords.find(gp => gp.gameId === game.id);
+            
+            if (!gamePlayerRecord) {
+              return {
+                ...game,
+                stats: [],
+                participationType: 'unknown',
+                gamePlayerId: null,
+                jerseyNumber: null,
+                isStarter: false,
+                minutesPlayed: 0,
+              };
+            }
+
+            // Get all stats for this user in this game - use simple select to avoid recursion
+            const stats = await db
+              .select()
+              .from(gameStats)
+              .where(eq(gameStats.gamePlayerId, gamePlayerRecord.id))
+              .orderBy(desc(gameStats.createdAt));
+
+            return {
+              ...game,
+              stats: stats.map(stat => ({
+                id: stat.id,
+                statType: stat.statType,
+                value: stat.value,
+                quarter: stat.quarter,
+                timeMinute: stat.timeMinute,
+                createdAt: stat.createdAt,
+                source: gamePlayerRecord.manualPlayerId ? 'manual' as const : 'direct' as const,
+              })),
+              // 🎯 UNIFIED SYSTEM: Determine participation type from legacy fields during transition
+              participationType: gamePlayerRecord.manualPlayerId ? 'manual' : 'direct',
+              gamePlayerId: gamePlayerRecord.id,
+              jerseyNumber: gamePlayerRecord.jerseyNumber,
+              isStarter: gamePlayerRecord.isStarter,
+              minutesPlayed: gamePlayerRecord.minutesPlayed,
+              unifiedUserId: gamePlayerRecord.unifiedUserId, // Include unified ID for frontend
+            };
+          } catch (gameError) {
+            console.error(`Error processing game ${game.id}:`, gameError);
+            return {
+              ...game,
+              stats: [],
+              participationType: 'error',
+              gamePlayerId: null,
+              jerseyNumber: null,
+              isStarter: false,
+              minutesPlayed: 0,
+            };
+          }
+        })
+      );
+    } catch (error) {
+      console.error('Error in gamesWithStats processing:', error);
+      throw error;
+    }
 
     res.json(gamesWithStats);
   } catch (error) {
@@ -1257,28 +1399,63 @@ router.get('/admin/manual-players', requireAuth, async (req: AuthenticatedReques
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    // Get all manual players first
     const manualPlayersList = await db
       .select({
         id: manualPlayers.id,
         name: manualPlayers.name,
         jerseyNumber: manualPlayers.jerseyNumber,
         linkedUserId: manualPlayers.linkedUserId,
+        linkedParentId: manualPlayers.linkedParentId,
         linkedBy: manualPlayers.linkedBy,
         linkedAt: manualPlayers.linkedAt,
         notes: manualPlayers.notes,
         createdAt: manualPlayers.createdAt,
         updatedAt: manualPlayers.updatedAt,
-        linkedUser: {
-          id: userTable.id,
-          name: userTable.name,
-          email: userTable.email,
-        }
       })
       .from(manualPlayers)
-      .leftJoin(userTable, eq(manualPlayers.linkedUserId, userTable.id))
       .orderBy(asc(manualPlayers.name));
 
-    res.json(manualPlayersList);
+    // Get linked users for manual players that have linkedUserId
+    const linkedUserIds = manualPlayersList
+      .filter(mp => mp.linkedUserId)
+      .map(mp => mp.linkedUserId!)
+      .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates
+
+    const linkedUsers = linkedUserIds.length > 0 ? await db
+      .select({
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+      })
+      .from(userTable)
+      .where(or(...linkedUserIds.map(id => eq(userTable.id, id))))
+      : [];
+
+    // Get linked parents for manual players that have linkedParentId
+    const linkedParentIds = manualPlayersList
+      .filter(mp => mp.linkedParentId)
+      .map(mp => mp.linkedParentId!)
+      .filter((id, index, arr) => arr.indexOf(id) === index); // Remove duplicates
+
+    const linkedParents = linkedParentIds.length > 0 ? await db
+      .select({
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+      })
+      .from(userTable)
+      .where(or(...linkedParentIds.map(id => eq(userTable.id, id))))
+      : [];
+
+    // Combine the data
+    const enrichedManualPlayersList = manualPlayersList.map(mp => ({
+      ...mp,
+      linkedUser: mp.linkedUserId ? linkedUsers.find(user => user.id === mp.linkedUserId) || null : null,
+      linkedParent: mp.linkedParentId ? linkedParents.find(parent => parent.id === mp.linkedParentId) || null : null,
+    }));
+
+    res.json(enrichedManualPlayersList);
   } catch (error) {
     console.error('Error fetching manual players:', error);
     res.status(500).json({ error: 'Failed to fetch manual players' });
@@ -1355,6 +1532,278 @@ router.patch('/admin/manual-players/:manualPlayerId/unlink', requireAuth, async 
   } catch (error) {
     console.error('Error unlinking manual player:', error);
     res.status(500).json({ error: 'Failed to unlink manual player' });
+  }
+});
+
+// Link manual player to parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/link-to-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    const { parentId } = req.body;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!parentId) {
+      return res.status(400).json({ error: 'Parent ID is required' });
+    }
+
+    // Verify parent exists and has parent role
+    const [parent] = await db.select()
+      .from(userTable)
+      .where(eq(userTable.id, parentId))
+      .limit(1);
+
+    if (!parent || parent.role !== 'parent') {
+      return res.status(404).json({ error: 'Parent not found or invalid role' });
+    }
+
+    // Update the manual player to link to parent
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedParentId: parentId,
+        linkedBy: user.id,
+        linkedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player linked to parent successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error linking manual player to parent:', error);
+    res.status(500).json({ error: 'Failed to link manual player to parent' });
+  }
+});
+
+// Unlink manual player from parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/unlink-from-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Update the manual player to remove the parent link
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedParentId: null,
+        linkedBy: null,
+        linkedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player unlinked from parent successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error unlinking manual player from parent:', error);
+    res.status(500).json({ error: 'Failed to unlink manual player from parent' });
+  }
+});
+
+// 🚨 DEPRECATED: Get manual players linked to a parent with their game stats
+// This endpoint is no longer needed with the unified player system
+// Use `/api/profiles/my-children` instead which returns ALL children (registered + manual)
+router.get('/parent/:parentId/manual-players', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { parentId } = req.params;
+    
+    // Check if user is accessing their own data or is admin
+    if (user.id !== parentId && user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Get manual players linked to this parent
+    const linkedManualPlayers = await db
+      .select({
+        id: manualPlayers.id,
+        name: manualPlayers.name,
+        jerseyNumber: manualPlayers.jerseyNumber,
+        notes: manualPlayers.notes,
+        linkedAt: manualPlayers.linkedAt,
+        createdAt: manualPlayers.createdAt,
+      })
+      .from(manualPlayers)
+      .where(eq(manualPlayers.linkedParentId, parentId))
+      .orderBy(asc(manualPlayers.name));
+
+    // For each manual player, get their game data
+    const manualPlayersWithGames = await Promise.all(
+      linkedManualPlayers.map(async (manualPlayer) => {
+        // Get games where this manual player participated
+        const playerGames = await db
+          .select({
+            id: games.id,
+            teamName: games.teamName,
+            isHome: games.isHome,
+            opponentTeam: games.opponentTeam,
+            gameDate: games.gameDate,
+            homeScore: games.homeScore,
+            awayScore: games.awayScore,
+            status: games.status,
+            jerseyNumber: gamePlayers.jerseyNumber,
+            isStarter: gamePlayers.isStarter,
+            minutesPlayed: gamePlayers.minutesPlayed,
+          })
+          .from(games)
+          .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
+          .where(eq(gamePlayers.manualPlayerId, manualPlayer.id))
+          .orderBy(desc(games.gameDate));
+
+        // Get stats for each game
+        const gamesWithStats = await Promise.all(
+          playerGames.map(async (game) => {
+            const gamePlayer = await db
+              .select({ id: gamePlayers.id })
+              .from(gamePlayers)
+              .where(
+                and(
+                  eq(gamePlayers.gameId, game.id),
+                  eq(gamePlayers.manualPlayerId, manualPlayer.id)
+                )
+              )
+              .limit(1);
+
+            if (gamePlayer.length === 0) return { ...game, stats: [] };
+
+            const stats = await db
+              .select({
+                id: gameStats.id,
+                statType: gameStats.statType,
+                value: gameStats.value,
+                quarter: gameStats.quarter,
+                timeMinute: gameStats.timeMinute,
+                createdAt: gameStats.createdAt,
+              })
+              .from(gameStats)
+              .where(eq(gameStats.gamePlayerId, gamePlayer[0].id))
+              .orderBy(desc(gameStats.createdAt));
+
+            return {
+              ...game,
+              stats: stats.map(stat => ({
+                ...stat,
+                source: 'manual' // Mark these as manual/historical stats
+              })),
+              participationType: 'manual',
+              manualPlayerName: manualPlayer.name,
+              manualPlayerJerseyNumber: manualPlayer.jerseyNumber,
+            };
+          })
+        );
+
+        return {
+          ...manualPlayer,
+          games: gamesWithStats,
+        };
+      })
+    );
+
+    res.json(manualPlayersWithGames);
+  } catch (error) {
+    console.error('Error fetching parent manual players:', error);
+    res.status(500).json({ error: 'Failed to fetch parent manual players' });
+  }
+});
+
+// Link manual player to parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/link-to-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    const { parentId } = req.body;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    if (!parentId) {
+      return res.status(400).json({ error: 'Parent ID is required' });
+    }
+
+    // Verify parent exists and has parent role
+    const [parent] = await db.select()
+      .from(userTable)
+      .where(eq(userTable.id, parentId))
+      .limit(1);
+
+    if (!parent || parent.role !== 'parent') {
+      return res.status(404).json({ error: 'Parent not found or invalid role' });
+    }
+
+    // Update the manual player to link to parent
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedParentId: parentId,
+        linkedBy: user.id,
+        linkedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player linked to parent successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error linking manual player to parent:', error);
+    res.status(500).json({ error: 'Failed to link manual player to parent' });
+  }
+});
+
+// Unlink manual player from parent (admin only)
+router.patch('/admin/manual-players/:manualPlayerId/unlink-from-parent', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const user = req.user!;
+    const { manualPlayerId } = req.params;
+    
+    // Check if user is admin
+    if (user.email !== 'codydearkland@gmail.com') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Update the manual player to remove the parent link
+    const [updatedManualPlayer] = await db
+      .update(manualPlayers)
+      .set({
+        linkedParentId: null,
+        linkedBy: null,
+        linkedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(manualPlayers.id, manualPlayerId))
+      .returning();
+
+    if (!updatedManualPlayer) {
+      return res.status(404).json({ error: 'Manual player not found' });
+    }
+
+    res.json({ message: 'Manual player unlinked from parent successfully', manualPlayer: updatedManualPlayer });
+  } catch (error) {
+    console.error('Error unlinking manual player from parent:', error);
+    res.status(500).json({ error: 'Failed to unlink manual player from parent' });
   }
 });
 
