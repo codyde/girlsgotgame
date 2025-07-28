@@ -65,3 +65,5 @@ Three main tables in the database:
 - `/src/types/`: TypeScript interfaces
 - `/src/data/`: Static data (exercise templates)
 - `/server/`: Node.js backend API server
+
+this is a test
