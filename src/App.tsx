@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Toaster } from 'react-hot-toast'
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { SessionProvider } from './contexts/SessionContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
@@ -27,6 +28,9 @@ function AppContent() {
   const [currentGameId, setCurrentGameId] = useState<string | null>(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [inviteCode, setInviteCode] = useState<string | null>(null)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showNewPost, setShowNewPost] = useState(false)
 
   // Check for invite code in URL on component mount
   useEffect(() => {
@@ -105,7 +109,7 @@ function AppContent() {
   const renderCurrentScreen = () => {
     switch (currentTab) {
       case 'feed':
-        return <FeedScreen onGameClick={navigateToGame} />
+        return <FeedScreen onGameClick={navigateToGame} onNavigate={setCurrentTab} showNewPost={showNewPost} setShowNewPost={setShowNewPost} />
       case 'training':
         return <TrainingScreen />
       case 'games':
@@ -138,19 +142,35 @@ function AppContent() {
       {/* Desktop Layout */}
       <div className="hidden lg:flex h-full">
         {/* Desktop Sidebar */}
-        <div className="w-64 bg-bg-primary shadow-lg border-r border-border-primary flex flex-col flex-shrink-0">
-          <div className="px-2 py-4 border-b border-border-primary">
-            <div className="flex items-center gap-2">
-              <div className="w-16 h-16">
+        <div className={`${sidebarCollapsed ? 'w-16' : 'w-64'} bg-bg-primary shadow-lg border-r border-border-primary flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out`}>
+          <div className="px-2 py-4 border-b border-border-primary relative">
+            <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-2'}`}>
+              <div className="w-16 h-16 flex-shrink-0">
                 <img src={logo} alt="Girls Got Game" className="w-16 h-16 object-contain" />
               </div>
-              <div>
-                <h1 className="text-2xl font-bold font-heading text-text-primary">Girls Got Game</h1>
-                <p className="text-sm font-body text-text-secondary">Basketball Community</p>
-              </div>
+              {!sidebarCollapsed && (
+                <div className="flex-1">
+                  <h1 className="text-2xl font-bold font-heading text-text-primary">Girls Got Game</h1>
+                  <p className="text-sm font-body text-text-secondary">Basketball Community</p>
+                </div>
+              )}
             </div>
+            
+            {/* Toggle Button */}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className={`absolute top-1/2 -translate-y-1/2 ${sidebarCollapsed ? '-right-4' : '-right-4'} w-8 h-8 bg-bg-primary border border-border-primary rounded-full shadow-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-all duration-200 z-10`}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            >
+              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
           </div>
-          <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
+          <Navigation 
+            currentTab={currentTab} 
+            setCurrentTab={setCurrentTab} 
+            isCollapsed={sidebarCollapsed}
+            onNewPost={() => setShowNewPost(true)}
+          />
         </div>
         
         {/* Desktop Main Content */}
@@ -162,9 +182,15 @@ function AppContent() {
       </div>
 
       {/* Mobile Layout */}
-      <div className="lg:hidden h-full flex flex-col bg-bg-secondary">
-        <Navigation currentTab={currentTab} setCurrentTab={setCurrentTab} />
-        <main className="flex-1 overflow-y-auto pt-16">
+      <div className="lg:hidden h-screen flex bg-bg-secondary">
+        <Navigation 
+          currentTab={currentTab} 
+          setCurrentTab={setCurrentTab}
+          mobileMenuOpen={mobileMenuOpen}
+          setMobileMenuOpen={setMobileMenuOpen}
+          onNewPost={() => setShowNewPost(true)}
+        />
+        <main className={`flex-1 overflow-y-auto overflow-x-hidden ${mobileMenuOpen ? 'z-0' : 'z-auto'}`}>
           {renderCurrentScreen()}
         </main>
       </div>

@@ -128,9 +128,12 @@ const MediaRenderer = ({
 
 interface FeedScreenProps {
   onGameClick?: (gameId: string) => void
+  onNavigate?: (tab: string) => void
+  showNewPost?: boolean
+  setShowNewPost?: (show: boolean) => void
 }
 
-export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
+export function FeedScreen({ onGameClick, onNavigate, showNewPost: externalShowNewPost, setShowNewPost: externalSetShowNewPost }: FeedScreenProps = {}) {
   const { user, profile } = useAuth()
   const { socket, isConnected } = useSocket()
   const isAdmin = user?.email === 'codydearkland@gmail.com'
@@ -139,7 +142,6 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
   const [filePreview, setFilePreview] = useState<string | null>(null)
   const [fileType, setFileType] = useState<'image' | 'video' | null>(null)
-  const [showNewPost, setShowNewPost] = useState(false)
   const [loading, setLoading] = useState(true)
   const [likes, setLikes] = useState<Record<string, Like[]>>({})
   const [comments, setComments] = useState<Record<string, Comment[]>>({})
@@ -150,7 +152,13 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({})
   const [showReportDialog, setShowReportDialog] = useState<{ postId: string; type: 'post' | 'media' } | null>(null)
   const [reportReason, setReportReason] = useState('')
+  const [showLikesDialog, setShowLikesDialog] = useState<string | null>(null)
+  const [likesDialogUsers, setLikesDialogUsers] = useState<any[]>([])
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Use external state if provided, otherwise use internal state
+  const showNewPost = externalShowNewPost ?? false
+  const setShowNewPost = externalSetShowNewPost ?? (() => {})
 
   // Helper function to close modal and reset state
   const closeModal = useCallback(() => {
@@ -159,7 +167,7 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
     setFilePreview(null)
     setFileType(null)
     setNewPost('')
-  }, [])
+  }, [setShowNewPost])
 
   const [isUploading, setIsUploading] = useState(false)
 
@@ -192,7 +200,26 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
           }
         })
         
-        setLikes(likesByPost)
+        // Merge with existing likes to preserve optimistic updates
+        setLikes(currentLikes => {
+          const mergedLikes = { ...likesByPost }
+          
+          // For each post, if we have existing optimistic likes (temp-*), preserve them
+          Object.keys(currentLikes).forEach(postId => {
+            const existingLikes = currentLikes[postId] || []
+            const serverLikes = mergedLikes[postId] || []
+            const optimisticLikes = existingLikes.filter(like => like.id.startsWith('temp-'))
+            
+            if (optimisticLikes.length > 0) {
+              // Keep server likes and add any optimistic likes that aren't duplicates
+              const serverUserIds = new Set(serverLikes.map(like => like.user_id))
+              const uniqueOptimisticLikes = optimisticLikes.filter(like => !serverUserIds.has(like.user_id))
+              mergedLikes[postId] = [...serverLikes, ...uniqueOptimisticLikes]
+            }
+          })
+          
+          return mergedLikes
+        })
         setComments(commentsByPost)
       }
     } catch (error) {
@@ -568,6 +595,20 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
       }
       
       console.log(hasLike ? '👎 Like removed successfully' : '👍 Like added successfully')
+      
+      // Fetch updated likes for this post to ensure consistency
+      try {
+        const { data: likesData } = await api.getLikes(postId)
+        if (likesData) {
+          setLikes(currentLikes => ({
+            ...currentLikes,
+            [postId]: likesData
+          }))
+        }
+      } catch (likesError) {
+        console.warn('Could not fetch updated likes:', likesError)
+        // Don't throw here, the optimistic update is probably fine
+      }
     } catch (error: unknown) {
       console.error('toggleLike error:', error)
       
@@ -647,8 +688,17 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return '' // Return empty string for invalid dates
+    }
+    
     const now = new Date()
     const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
+    
+    // Handle negative differences (future dates)
+    if (diffInMinutes < 0) return 'now'
     
     if (diffInMinutes < 60) return `${diffInMinutes}m ago`
     if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`
@@ -689,6 +739,20 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
     return postLikes.some(like => like.user_id === user.id)
   }
 
+  const showWhoLiked = async (postId: string) => {
+    try {
+      const { data, error } = await api.getLikes(postId)
+      if (error) {
+        toast.error('Error loading likes: ' + error)
+        return
+      }
+      setLikesDialogUsers(data || [])
+      setShowLikesDialog(postId)
+    } catch (error) {
+      toast.error('Error loading likes: ' + String(error))
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-4 space-y-4">
@@ -714,13 +778,13 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
     return (
       <div className="h-full flex flex-col bg-bg-secondary">
         {/* Fixed Header */}
-        <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0 z-40">
+        <div className="bg-bg-primary border-b border-border-primary p-3 lg:p-6 flex-shrink-0 z-40">
           <div className="max-w-2xl lg:mx-auto">
-            <div className="flex items-center gap-3 mb-2">
-              <Home className="w-8 h-8 text-primary-600" />
-              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Feed</h1>
+            <div className="flex items-center gap-2 mb-2">
+              <Home className="w-6 h-6 lg:w-8 lg:h-8 text-primary-600" />
+              <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Feed</h1>
             </div>
-            <p className="font-body text-text-secondary">Connect with your team and share your progress</p>
+            <p className="font-body text-text-secondary hidden lg:block">Connect with your team and share your progress</p>
           </div>
         </div>
 
@@ -748,38 +812,32 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
   return (
     <div className="h-full flex flex-col bg-bg-secondary">
       {/* Fixed Header */}
-      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0 z-40">
+      <div className="bg-bg-primary border-b border-border-primary p-3 lg:p-6 flex-shrink-0 z-40">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Home className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-heading font-bold text-text-primary">Team Feed</h1>
+          <div className="flex items-center gap-2">
+            <Home className="w-6 h-6 lg:w-8 lg:h-8 text-primary-600" />
+            <h1 className="text-xl lg:text-4xl font-heading font-bold text-text-primary">Team Feed</h1>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={handleManualRefresh}
-              className="bg-bg-tertiary text-text-secondary p-3 rounded-full hover:bg-secondary-100 transition-all disabled:opacity-50"
+              className="bg-bg-tertiary text-text-secondary p-2 lg:p-3 rounded-full hover:bg-secondary-100 transition-all disabled:opacity-50"
               title={isConnected ? "Refresh feed (Connected)" : "Refresh feed (Offline - Manual only)"}
               disabled={refreshing}
             >
-              <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-            <button
-              onClick={() => setShowNewPost(true)}
-              className="bg-gradient-to-r from-primary-500 to-primary-600 text-white p-3 rounded-full shadow-lg hover:shadow-xl transition-all"
-            >
-              <Plus className="w-5 h-5" />
+              <RefreshCw className={`w-4 h-4 lg:w-5 lg:h-5 ${refreshing ? 'animate-spin' : ''}`} />
             </button>
           </div>
         </div>
       </div>
 
       {/* Scrollable Content Area */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto min-h-0">
 
       {/* New post modal */}
       {showNewPost && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 lg:pl-4 pl-16 z-50"
             onClick={(e) => {
               // Close modal when clicking on overlay
               if (e.target === e.currentTarget) {
@@ -884,7 +942,7 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
         {/* Lightbox for image viewing */}
         {lightboxImage && (
           <div
-            className="fixed inset-0 flex items-center justify-center p-4 z-50 animate-in fade-in duration-300"
+            className="fixed inset-0 flex items-center justify-center p-4 lg:pl-4 pl-16 z-50 animate-in fade-in duration-300"
             onClick={() => setLightboxImage(null)}
             style={{
               background: 'rgba(0, 0, 0, 0.95)',
@@ -914,7 +972,7 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
         )}
 
         {/* Posts */}
-        <div className="max-w-2xl lg:mx-auto px-4 pt-6 pb-20 lg:pb-6">
+        <div className="max-w-2xl lg:mx-auto px-4 pt-6 pb-60 lg:pb-6" style={{ paddingBottom: 'clamp(15rem, 25vh, 20rem)' }}>
           {posts.length === 0 ? (
             <div className="text-center py-8 px-4">
               <div className="text-4xl mb-4">🏀</div>
@@ -1055,9 +1113,14 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
                       </button>
                       <button
                         onClick={() => setShowComments(prev => ({ ...prev, [post.id]: !prev[post.id] }))}
-                        className="flex items-center gap-2 text-gray-500 hover:text-blue-500 transition-colors"
+                        className="flex items-center gap-2 text-gray-500 hover:text-blue-500 transition-colors relative"
                       >
                         <MessageCircle className="w-5 h-5" />
+                        {comments[post.id]?.length > 0 && (
+                          <span className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                            {comments[post.id].length}
+                          </span>
+                        )}
                       </button>
                       <button
                         className="flex items-center gap-2 text-gray-500 hover:text-green-500 transition-colors"
@@ -1069,9 +1132,12 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
 
                   {/* Like count */}
                   {likes[post.id]?.length > 0 && (
-                    <p className="text-sm font-semibold text-gray-900 mb-2 font-body">
+                    <button
+                      onClick={() => showWhoLiked(post.id)}
+                      className="text-sm font-semibold text-gray-900 mb-2 font-body hover:text-primary-600 transition-colors"
+                    >
                       {likes[post.id].length} {likes[post.id].length === 1 ? 'like' : 'likes'}
-                    </p>
+                    </button>
                   )}
 
                   {/* Most recent comment preview */}
@@ -1218,9 +1284,63 @@ export function FeedScreen({ onGameClick }: FeedScreenProps = {}) {
         </div>
       </div>
 
+      {/* Likes Dialog */}
+      {showLikesDialog && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
+          <div className="bg-white rounded-lg max-w-md w-full p-6 max-h-[70vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold font-heading text-text-primary">Likes</h3>
+              <button
+                onClick={() => {
+                  setShowLikesDialog(null)
+                  setLikesDialogUsers([])
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            
+            <div className="space-y-3">
+              {likesDialogUsers.length === 0 ? (
+                <p className="text-gray-500 text-center py-4">No likes yet</p>
+              ) : (
+                likesDialogUsers.map((like) => (
+                  <div key={like.id} className="flex items-center gap-3">
+                    {like.user?.avatarUrl ? (
+                      <img
+                        src={like.user.avatarUrl}
+                        alt="User Avatar"
+                        className="w-10 h-10 rounded-full object-cover"
+                        style={{ 
+                          imageRendering: 'high-quality',
+                          colorInterpolation: 'sRGB'
+                        }}
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+                        {getUserInitials(like.user?.name || null, like.user?.email || '')}
+                      </div>
+                    )}
+                    <div className="flex-1">
+                      <p className="font-semibold text-gray-900 font-heading">
+                        {like.user?.name || like.user?.email?.split('@')[0] || 'Unknown User'}
+                      </p>
+                      <p className="text-sm text-gray-500 font-body">
+                        {formatTime(like.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Report Dialog */}
       {showReportDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
           <div className="bg-white rounded-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold font-heading text-text-primary">Report Content</h3>

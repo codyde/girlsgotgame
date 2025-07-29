@@ -15,7 +15,6 @@ export const user = pgTable('user', {
   avatarUrl: varchar('avatar_url', { length: 500 }),
   totalPoints: integer('total_points').default(0).notNull(),
   role: varchar('role', { length: 20 }).default('player').notNull(), // 'parent' | 'player'
-  childId: varchar('child_id', { length: 255 }),
   isOnboarded: boolean('is_onboarded').default(false).notNull(),
   isVerified: boolean('isverified').default(false).notNull(),
   jerseyNumber: integer('jersey_number'),
@@ -240,10 +239,6 @@ export const userRelations = relations(user, ({ many, one }) => ({
   createdTeams: many(teams),
   sentMessages: many(chatMessages, { relationName: 'sender' }),
   receivedMessages: many(chatMessages, { relationName: 'recipient' }),
-  child: one(user, {
-    fields: [user.childId],
-    references: [user.id],
-  }),
   // New parent-child relationships
   parentRelationships: many(parentChildRelations, { relationName: 'parent' }),
   childRelationships: many(parentChildRelations, { relationName: 'child' }),

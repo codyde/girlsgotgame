@@ -530,7 +530,11 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   }
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) {
+      return '' // Return empty string for invalid dates
+    }
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -596,7 +600,7 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         <div className="max-w-6xl lg:mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <Shield className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Admin Panel</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Admin Panel</h1>
           </div>
           <p className="font-body text-text-secondary">Manage player workouts and activity</p>
         </div>
@@ -639,78 +643,83 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         </div>
       </div>
 
-      {/* Tab Navigation */}
+      {/* Tab Navigation - 2 Row Layout */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 mb-6">
-        <div className="flex border-b border-gray-200">
+        {/* First Row - Main Management */}
+        <div className="flex flex-wrap border-b border-gray-200">
           <button
             onClick={() => setCurrentTab('workouts')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
+            className={`flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 font-medium font-body transition-colors text-sm lg:text-base ${
               currentTab === 'workouts'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Workouts
+            <span className="truncate">Workouts</span>
           </button>
           <button
             onClick={() => setCurrentTab('teams')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
+            className={`flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 font-medium font-body transition-colors text-sm lg:text-base ${
               currentTab === 'teams'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Teams
+            <span className="truncate">Teams</span>
           </button>
           <button
             onClick={() => setCurrentTab('games')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
+            className={`flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 font-medium font-body transition-colors text-sm lg:text-base ${
               currentTab === 'games'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Games
-          </button>
-          <button
-            onClick={() => setCurrentTab('relations')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
-              currentTab === 'relations'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Parent-Child Relations
-          </button>
-          <button
-            onClick={() => setCurrentTab('manual-players')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
-              currentTab === 'manual-players'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Manual Players
-          </button>
-          <button
-            onClick={() => setCurrentTab('unverified')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
-              currentTab === 'unverified'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Unverified Users
+            <span className="truncate">Games</span>
           </button>
           <button
             onClick={() => setCurrentTab('reports')}
-            className={`px-6 py-3 font-medium font-body transition-colors ${
+            className={`flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 font-medium font-body transition-colors text-sm lg:text-base ${
               currentTab === 'reports'
-                ? 'text-primary-600 border-b-2 border-primary-600' 
-                : 'text-gray-500 hover:text-gray-700'
+                ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            Reports
+            <span className="truncate">Reports</span>
+          </button>
+        </div>
+        
+        {/* Second Row - User Management */}
+        <div className="flex flex-wrap">
+          <button
+            onClick={() => setCurrentTab('relations')}
+            className={`flex-1 min-w-0 px-2 sm:px-3 lg:px-4 py-2.5 font-medium font-body transition-colors text-xs sm:text-sm lg:text-base ${
+              currentTab === 'relations'
+                ? 'text-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <span className="truncate">Parent-Child</span>
+          </button>
+          <button
+            onClick={() => setCurrentTab('manual-players')}
+            className={`flex-1 min-w-0 px-2 sm:px-3 lg:px-4 py-2.5 font-medium font-body transition-colors text-xs sm:text-sm lg:text-base ${
+              currentTab === 'manual-players'
+                ? 'text-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <span className="truncate">Manual Players</span>
+          </button>
+          <button
+            onClick={() => setCurrentTab('unverified')}
+            className={`flex-1 min-w-0 px-2 sm:px-3 lg:px-4 py-2.5 font-medium font-body transition-colors text-xs sm:text-sm lg:text-base ${
+              currentTab === 'unverified'
+                ? 'text-primary-600 bg-primary-50' 
+                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <span className="truncate">Unverified</span>
           </button>
         </div>
       </div>

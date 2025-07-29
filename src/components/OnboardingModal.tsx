@@ -164,7 +164,7 @@ export function OnboardingModal({ isOpen, onClose }: OnboardingModalProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 backdrop-blur-sm"
+        className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 lg:pl-4 pl-16 z-50 backdrop-blur-sm"
         onClick={(e) => e.target === e.currentTarget && step !== 'complete' && onClose()}
       >
         <motion.div

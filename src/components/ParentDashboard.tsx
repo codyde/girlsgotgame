@@ -19,9 +19,19 @@ export function ParentDashboard() {
   const [selectedChild, setSelectedChild] = useState<string>('')
   const [expandedGameStats, setExpandedGameStats] = useState<Set<string>>(new Set())
 
+  const isParent = profile?.role === 'parent'
+  const isPlayer = profile?.role === 'player'
+
   useEffect(() => {
-    fetchMyChildren()
-  }, [user])
+    if (isParent) {
+      fetchMyChildren()
+    } else if (isPlayer && user) {
+      // For players, auto-select themselves
+      setSelectedChild(user.id)
+      fetchChildData(user.id)
+      setLoading(false)
+    }
+  }, [user, isParent, isPlayer])
 
   const fetchMyChildren = async () => {
     try {
@@ -66,7 +76,11 @@ export function ParentDashboard() {
   }
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) {
+      return '' // Return empty string for invalid dates
+    }
+    return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -106,7 +120,7 @@ export function ParentDashboard() {
     })
   }
 
-  const selectedChildProfile = children.find(p => p.id === selectedChild)
+  const selectedChildProfile = isPlayer ? profile : children.find(p => p.id === selectedChild)
 
   if (loading) {
     return (
@@ -126,72 +140,78 @@ export function ParentDashboard() {
         <div className="max-w-4xl lg:mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <Shield className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Parent Dashboard</h1>
+            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">
+              {isParent ? 'Parent Dashboard' : 'My Stats'}
+            </h1>
           </div>
-          <p className="text-text-secondary font-body">Track your child's basketball progress</p>
+          <p className="text-text-secondary font-body">
+            {isParent ? 'Track your child\'s basketball progress' : 'View your basketball progress and game stats'}
+          </p>
         </div>
       </div>
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto space-y-6">
-        {/* Child Selection */}
-        <div className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-6">
-          <h3 className="text-lg font-semibold font-heading text-text-primary mb-4 flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-primary-600" />
-            Select Your Child
-          </h3>
-          
-          {children.length === 0 ? (
-            <div className="text-center py-6">
-              <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-500 font-body">No children assigned to your account yet.</p>
-              <p className="text-sm text-gray-400 font-body mt-1">Contact an admin to link your children to your parent account.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <select
-                value={selectedChild}
-                onChange={(e) => {
-                  const childId = e.target.value
-                  if (childId) {
-                    selectChild(childId)
-                  }
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-              >
-                <option value="">Select a child...</option>
-                {children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
+        {/* Child Selection - Only for parents */}
+        {isParent && (
+          <div className="bg-bg-primary rounded-xl shadow-sm border border-border-primary p-6">
+            <h3 className="text-lg font-semibold font-heading text-text-primary mb-4 flex items-center gap-2">
+              <UserIcon className="w-5 h-5 text-primary-600" />
+              Select Your Child
+            </h3>
             
-            {selectedChildProfile && (
-              <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 mt-3">
-                {selectedChildProfile.avatarUrl ? (
-                  <img
-                    src={selectedChildProfile.avatarUrl}
-                    alt="Child"
-                    className="w-10 h-10 rounded-full object-cover"
-                  />
-                ) : (
-                  <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                    {selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()}
-                  </div>
-                )}
-                <div>
-                  <p className="font-semibold font-body text-green-800">
-                    Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
-                  </p>
-                  <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
-                </div>
+            {children.length === 0 ? (
+              <div className="text-center py-6">
+                <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="text-gray-500 font-body">No children assigned to your account yet.</p>
+                <p className="text-sm text-gray-400 font-body mt-1">Contact an admin to link your children to your parent account.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <select
+                  value={selectedChild}
+                  onChange={(e) => {
+                    const childId = e.target.value
+                    if (childId) {
+                      selectChild(childId)
+                    }
+                  }}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
+                >
+                  <option value="">Select a child...</option>
+                  {children.map((child) => (
+                    <option key={child.id} value={child.id}>
+                      {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
+                    </option>
+                  ))}
+                </select>
               </div>
             )}
-        </div>
+              
+              {selectedChildProfile && (
+                <div className="flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200 mt-3">
+                  {selectedChildProfile.avatarUrl ? (
+                    <img
+                      src={selectedChildProfile.avatarUrl}
+                      alt="Child"
+                      className="w-10 h-10 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
+                      {selectedChildProfile.name?.[0]?.toUpperCase() || selectedChildProfile.email[0].toUpperCase()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-semibold font-body text-green-800">
+                      Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
+                    </p>
+                    <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
+                  </div>
+                </div>
+              )}
+          </div>
+        )}
 
         {/* Child Stats */}
         {selectedChildProfile && (

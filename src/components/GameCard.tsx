@@ -15,7 +15,11 @@ export function GameCard({ game, commentCount = 0, onClick }: GameCardProps) {
   const isCompleted = game.homeScore !== null && game.awayScore !== null
 
   const formatTime = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) {
+      return '' // Return empty string for invalid dates
+    }
+    return date.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',

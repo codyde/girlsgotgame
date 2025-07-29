@@ -172,7 +172,6 @@ router.post('/use', requireAuth, async (req: AuthenticatedRequest, res: Response
         avatarUrl: user.avatarUrl,
         totalPoints: user.totalPoints,
         role: user.role,
-        childId: user.childId,
         isOnboarded: user.isOnboarded,
         isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,

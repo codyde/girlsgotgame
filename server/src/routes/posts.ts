@@ -30,8 +30,14 @@ router.get('/feed', async (req, res) => {
         media: true,
         game: true,
         likes: {
-          columns: {
-            userId: true
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                avatarUrl: true
+              }
+            }
           }
         },
         comments: {
@@ -352,6 +358,33 @@ router.delete('/comments/:commentId', requireAuth, async (req: AuthenticatedRequ
     res.status(204).send();
   } catch (error) {
     console.error('Delete comment error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Get post likes with user information
+router.get('/:id/likes', async (req, res) => {
+  try {
+    const { id: postId } = req.params;
+
+    const postLikes = await db.query.likes.findMany({
+      where: eq(likes.postId, postId),
+      with: {
+        user: {
+          columns: {
+            id: true,
+            name: true,
+            avatarUrl: true,
+            email: true
+          }
+        }
+      },
+      orderBy: [desc(likes.createdAt)]
+    });
+
+    res.json(postLikes);
+  } catch (error) {
+    console.error('Get post likes error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

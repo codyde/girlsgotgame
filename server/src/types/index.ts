@@ -8,7 +8,6 @@ export const profileSchema = z.object({
   avatarUrl: z.string().url().nullable(),
   totalPoints: z.number().int().min(0),
   role: z.enum(['parent', 'player']),
-  childId: z.string().uuid().nullable(),
   isOnboarded: z.boolean(),
   jerseyNumber: z.number().int().min(1).max(99).nullable(),
   createdAt: z.string(),
@@ -19,7 +18,6 @@ export const createProfileSchema = z.object({
   email: z.string().email(),
   name: z.string().nullable().optional(),
   role: z.enum(['parent', 'player']).default('player'),
-  childId: z.string().uuid().optional(),
   jerseyNumber: z.number().int().min(1).max(99).optional(),
   isOnboarded: z.boolean().optional().default(false),
   totalPoints: z.number().int().min(0).optional().default(0),
@@ -27,9 +25,8 @@ export const createProfileSchema = z.object({
 
 export const updateProfileSchema = z.object({
   name: z.string().nullable().optional(),
-  avatarUrl: z.string().url().nullable().optional(),
+  avatarUrl: z.string().url().nullable().optional(),  
   role: z.enum(['parent', 'player']).optional(),
-  childId: z.string().uuid().optional(),
   isOnboarded: z.boolean().optional(),
   jerseyNumber: z.number().int().min(1).max(99).optional(),
 });

@@ -177,6 +177,10 @@ class ApiClient {
     return this.request(`/posts/comments/${commentId}`, { method: 'DELETE' });
   }
 
+  async getLikes(postId: string) {
+    return this.request(`/posts/${postId}/likes`);
+  }
+
   // File upload endpoints
   async uploadFile(file: File) {
     const formData = new FormData();
@@ -323,6 +327,10 @@ class ApiClient {
   // Games endpoints
   async getGames() {
     return this.request('/games');
+  }
+
+  async getMyGames() {
+    return this.request('/games/my-games');
   }
 
   async createGame(teamName: string, isHome: boolean, opponentTeam: string, gameDate: string) {

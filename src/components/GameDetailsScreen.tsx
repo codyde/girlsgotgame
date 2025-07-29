@@ -331,7 +331,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl lg:text-3xl font-bold font-heading text-text-primary">Game Details</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Game Details</h1>
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center">
@@ -352,7 +352,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl lg:text-3xl font-bold font-heading text-text-primary">Game Not Found</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Game Not Found</h1>
           </div>
         </div>
       </div>
@@ -369,7 +369,18 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
     ? players.filter(player => {
         // For parents, only show their children
         const myChildIds = myChildren.map(child => child.id)
-        return player.userId && myChildIds.includes(player.userId)
+        
+        // Check direct registered players
+        if (player.userId && myChildIds.includes(player.userId)) {
+          return true
+        }
+        
+        // Check manual players linked to their children
+        if (player.manualPlayer?.linkedUserId && myChildIds.includes(player.manualPlayer.linkedUserId)) {
+          return true
+        }
+        
+        return false
       })
     : players // Admins see all players
 
@@ -385,7 +396,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl lg:text-3xl font-bold font-heading text-text-primary">Game Details</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Game Details</h1>
           </div>
           {isAdmin && !game.isSharedToFeed && (
             <button
@@ -876,7 +887,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
 
           {/* Add Player Modal */}
           {showAddPlayer && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
               <div className="bg-white rounded-xl max-w-md w-full p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold font-heading">Add Player to Game</h3>

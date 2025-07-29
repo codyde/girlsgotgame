@@ -333,7 +333,7 @@ export function TeamChatScreen() {
       <div className="flex items-center justify-between p-4 lg:p-6 border-b border-border-primary bg-bg-primary">
         <div className="flex items-center gap-3">
           <MessageCircle className="w-8 h-8 text-primary-600" />
-          <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Chat</h1>
+          <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Chat</h1>
         </div>
         
         {/* Connection status */}

@@ -7,50 +7,53 @@ import { getSocketIO } from '../lib/socket';
 
 const router = express.Router();
 
-// Get all games (filtered by user role and parent-child relationships)
+// Get all games (everyone sees all games)
 router.get('/', async (req, res) => {
   try {
-    // If no auth, return all games (for backward compatibility)
-    if (!req.user) {
+    // Return all games for everyone
+    const allGames = await db
+      .select()
+      .from(games)
+      .orderBy(asc(games.gameDate));
+    
+    res.json(allGames);
+  } catch (error) {
+    console.error('Error fetching games:', error);
+    res.status(500).json({ error: 'Failed to fetch games' });
+  }
+});
+
+// Get my games (games where user or their children participated)
+router.get('/my-games', requireAuth, async (req, res) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.email === 'codydearkland@gmail.com';
+    
+    if (isAdmin) {
+      // Admins see all games as "their games"
       const allGames = await db
         .select()
         .from(games)
         .orderBy(asc(games.gameDate));
       return res.json(allGames);
     }
-
-    const user = req.user;
-    const isAdmin = user.email === 'codydearkland@gmail.com';
     
-    let gamesQuery;
-    
-    if (isAdmin) {
-      // Admins see all games
-      gamesQuery = db
-        .select()
-        .from(games)
-        .orderBy(asc(games.gameDate));
-    } else if (user.role === 'parent') {
-      // Parents only see games where their children participated
+    if (user.role === 'parent') {
+      // Parents see games where their children participated
       const childRelations = await db
         .select({ childId: parentChildRelations.childId })
         .from(parentChildRelations)
         .where(eq(parentChildRelations.parentId, user.id));
-      
+        
       if (childRelations.length === 0) {
-        // Parent has no assigned children, return all games for now
-        // This prevents parents from seeing empty lists if relationships aren't set up
-        const allGames = await db
-          .select()
-          .from(games)
-          .orderBy(asc(games.gameDate));
-        return res.json(allGames);
+        // Parent has no assigned children, return empty array
+        return res.json([]);
       }
       
       const childUserIds = childRelations.map(rel => rel.childId);
       
-      // Get games where any of the parent's children participated
-      gamesQuery = db
+      // Get games where any of the parent's children participated (either directly or via linked manual players)
+      const parentGames = await db
         .select({
           id: games.id,
           teamName: games.teamName,
@@ -67,8 +70,12 @@ router.get('/', async (req, res) => {
         })
         .from(games)
         .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
+        .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
         .where(
-          or(...childUserIds.map(childId => eq(gamePlayers.userId, childId)))
+          or(
+            ...childUserIds.map(childId => eq(gamePlayers.userId, childId)),
+            ...childUserIds.map(childId => eq(manualPlayers.linkedUserId, childId))
+          )
         )
         .groupBy(
           games.id,
@@ -85,8 +92,10 @@ router.get('/', async (req, res) => {
           games.updatedAt
         )
         .orderBy(asc(games.gameDate));
+        
+      return res.json(parentGames);
     } else {
-      // Regular players see games they participated in, or all games if not in any
+      // Players see games they participated in
       const playerGames = await db
         .select({
           id: games.id,
@@ -106,24 +115,12 @@ router.get('/', async (req, res) => {
         .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
         .where(eq(gamePlayers.userId, user.id))
         .orderBy(asc(games.gameDate));
-      
-      if (playerGames.length === 0) {
-        // If player isn't in any games, show all games
-        const allGames = await db
-          .select()
-          .from(games)
-          .orderBy(asc(games.gameDate));
-        return res.json(allGames);
-      }
-      
+        
       return res.json(playerGames);
     }
-    
-    const gameResults = await gamesQuery;
-    res.json(gameResults);
   } catch (error) {
-    console.error('Error fetching games:', error);
-    res.status(500).json({ error: 'Failed to fetch games' });
+    console.error('Error fetching my games:', error);
+    res.status(500).json({ error: 'Failed to fetch my games' });
   }
 });
 
@@ -484,12 +481,13 @@ router.post('/:gameId/share-to-feed', requireAuth, async (req, res) => {
   }
 });
 
-// Get game with players and stats
-router.get('/:gameId/players', async (req, res) => {
+// Get game with players and stats (filtered by user permissions)
+router.get('/:gameId/players', requireAuth, async (req, res) => {
   try {
     const { gameId } = req.params;
+    const user = req.user!;
 
-    // Get game players with user and manual player info
+    // Get all game players with user and manual player info
     const players = await db
       .select({
         id: gamePlayers.id,
@@ -516,14 +514,89 @@ router.get('/:gameId/players', async (req, res) => {
       .where(eq(gamePlayers.gameId, gameId))
       .orderBy(asc(gamePlayers.createdAt));
 
-    // Get stats for each player
+    // Determine which players the user can see stats for
+    let allowedUserIds: string[] = [];
+    let isAdmin = false;
+    
+    if (req.user) {
+      const user = req.user;
+      isAdmin = user.email === 'codydearkland@gmail.com';
+      
+      if (isAdmin) {
+        // Admins can see all player stats - no filtering needed
+        // Don't populate allowedUserIds, we'll use isAdmin flag instead
+      } else if (user.role === 'parent') {
+        // Parents can only see their children's stats
+        const childRelations = await db
+          .select({ childId: parentChildRelations.childId })
+          .from(parentChildRelations)
+          .where(eq(parentChildRelations.parentId, user.id));
+        
+        allowedUserIds = childRelations.map(rel => rel.childId);
+      } else if (user.role === 'player') {
+        // Players can only see their own stats
+        allowedUserIds = [user.id];
+      }
+    }
+
+    // Get stats for each player, but only include stats for allowed users
     const playersWithStats = await Promise.all(
       players.map(async (player) => {
-        const stats = await db
-          .select()
-          .from(gameStats)
-          .where(eq(gameStats.gamePlayerId, player.id))
-          .orderBy(asc(gameStats.createdAt));
+        let stats = [];
+        let manualPlayerLinkedUserId = null;
+        
+        // If this is a manual player, get their linked user info
+        if (player.manualPlayerId) {
+          const manualPlayerInfo = await db
+            .select({ linkedUserId: manualPlayers.linkedUserId })
+            .from(manualPlayers)
+            .where(eq(manualPlayers.id, player.manualPlayerId))
+            .limit(1);
+          
+          if (manualPlayerInfo.length > 0) {
+            manualPlayerLinkedUserId = manualPlayerInfo[0].linkedUserId;
+          }
+        }
+        
+        // Fetch stats based on permissions
+        if (req.user) {
+          const user = req.user;
+          const isUserAdmin = user.email === 'codydearkland@gmail.com';
+          
+          // Admin sees all stats
+          if (isUserAdmin) {
+            stats = await db
+              .select()
+              .from(gameStats)
+              .where(eq(gameStats.gamePlayerId, player.id))
+              .orderBy(asc(gameStats.createdAt));
+          }
+          // Check if user has permission to see this player's stats
+          else {
+            let hasPermission = false;
+            
+            // Direct registered player - check if their userId is allowed
+            if (player.userId && allowedUserIds.includes(player.userId)) {
+              hasPermission = true;
+            }
+            // Manual player - check if they're linked to an allowed user
+            else if (!player.userId && player.manualPlayerId && manualPlayerLinkedUserId) {
+              hasPermission = allowedUserIds.includes(manualPlayerLinkedUserId);
+            }
+            // Unlinked manual players - everyone can see their stats
+            else if (!player.userId && player.manualPlayerId && !manualPlayerLinkedUserId) {
+              hasPermission = true;
+            }
+            
+            if (hasPermission) {
+              stats = await db
+                .select()
+                .from(gameStats)
+                .where(eq(gameStats.gamePlayerId, player.id))
+                .orderBy(asc(gameStats.createdAt));
+            }
+          }
+        }
 
         return {
           id: player.id,
@@ -544,6 +617,7 @@ router.get('/:gameId/players', async (req, res) => {
             name: player.manualPlayerName,
             jerseyNumber: player.manualPlayerJersey,
             notes: player.manualPlayerNotes,
+            linkedUserId: manualPlayerLinkedUserId,
           } : null,
           stats: stats,
         };
@@ -1168,29 +1242,34 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
     const user = req.user!;
     const isAdmin = user.email === 'codydearkland@gmail.com';
     const { userId } = req.params;
-
-    // Check permissions: admin or parent of the user
+    
+    // Check permissions: admin, parent of the user, or the user themselves
     let hasPermission = isAdmin;
     
-    if (!isAdmin && user.role === 'parent') {
-      // Check if this parent has permission to view this user's games
-      const parentRelation = await db
-        .select()
-        .from(parentChildRelations)
-        .where(and(
-          eq(parentChildRelations.parentId, user.id),
-          eq(parentChildRelations.childId, userId)
-        ))
-        .limit(1);
-      
-      hasPermission = parentRelation.length > 0;
+    if (!isAdmin) {
+      if (user.role === 'parent') {
+        // Check if this parent has permission to view this user's games
+        const parentRelation = await db
+          .select()
+          .from(parentChildRelations)
+          .where(and(
+            eq(parentChildRelations.parentId, user.id),
+            eq(parentChildRelations.childId, userId)
+          ))
+          .limit(1);
+        
+        hasPermission = parentRelation.length > 0;
+      } else if (user.role === 'player') {
+        // Players can view their own games
+        hasPermission = user.id === userId;
+      }
     }
     
     if (!hasPermission) {
-      return res.status(403).json({ error: 'Permission denied: You can only view games for your own children' });
+      return res.status(403).json({ error: 'Permission denied: You can only view games for your own children or yourself' });
     }
 
-    // Get games where the user participated
+    // Get games where the user participated (either directly or via linked manual player)
     const userGames = await db
       .select({
         id: games.id,
@@ -1211,12 +1290,40 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
       })
       .from(games)
       .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
-      .where(eq(gamePlayers.userId, userId))
+      .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+      .where(
+        or(
+          eq(gamePlayers.userId, userId),
+          eq(manualPlayers.linkedUserId, userId)
+        )
+      )
       .orderBy(desc(games.gameDate));
 
-    // For each game, get the user's stats
+    // For each game, get the user's stats (need to check all gamePlayer records for this user)
     const gamesWithStats = await Promise.all(
       userGames.map(async (game) => {
+        // Get all gamePlayers records for this user in this game
+        const allGamePlayers = await db
+          .select({ id: gamePlayers.id })
+          .from(gamePlayers)
+          .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+          .where(and(
+            eq(gamePlayers.gameId, game.id),
+            or(
+              eq(gamePlayers.userId, userId),
+              eq(manualPlayers.linkedUserId, userId)
+            )
+          ));
+
+        if (allGamePlayers.length === 0) {
+          return {
+            ...game,
+            stats: [],
+          };
+        }
+
+        // Get stats for all gamePlayer records
+        const gamePlayerIds = allGamePlayers.map(gp => gp.id);
         const stats = await db
           .select({
             id: gameStats.id,
@@ -1229,7 +1336,7 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
           .from(gameStats)
           .where(and(
             eq(gameStats.gameId, game.id),
-            eq(gameStats.gamePlayerId, game.gamePlayerId)
+            or(...gamePlayerIds.map(id => eq(gameStats.gamePlayerId, id)))
           ))
           .orderBy(desc(gameStats.createdAt));
 

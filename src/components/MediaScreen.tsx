@@ -210,7 +210,7 @@ export function MediaScreen({}: MediaScreenProps) {
       <div className="bg-bg-primary border-b border-border-primary p-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-bold font-heading text-text-primary">Media Gallery</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Media Gallery</h1>
             <p className="text-text-secondary font-body mt-1">
               Browse and manage uploaded photos and videos
             </p>
@@ -409,7 +409,7 @@ export function MediaScreen({}: MediaScreenProps) {
 
       {/* Upload Modal */}
       {showUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
           <div className="bg-bg-primary rounded-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold font-heading text-text-primary">Upload Media</h3>
@@ -454,7 +454,7 @@ export function MediaScreen({}: MediaScreenProps) {
 
       {/* Media Detail Modal */}
       {selectedItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
           <div className="bg-bg-primary rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center p-4 border-b border-border-primary">
               <h3 className="text-lg font-bold font-heading text-text-primary">
@@ -535,7 +535,7 @@ export function MediaScreen({}: MediaScreenProps) {
 
       {/* Report Dialog */}
       {showReportDialog && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
           <div className="bg-bg-primary rounded-lg max-w-md w-full p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold font-heading text-text-primary">Report Media</h3>

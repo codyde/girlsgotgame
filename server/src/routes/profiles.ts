@@ -20,7 +20,6 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: true,
         totalPoints: true,
         role: true,
-        childId: true,
         isOnboarded: true,
         isVerified: true,
         jerseyNumber: true,
@@ -66,7 +65,6 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: user.avatarUrl,
         totalPoints: user.totalPoints,
         role: user.role,
-        childId: user.childId,
         isOnboarded: user.isOnboarded,
         isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
@@ -103,7 +101,6 @@ router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: user.avatarUrl,
         totalPoints: user.totalPoints,
         role: user.role,
-        childId: user.childId,
         isOnboarded: user.isOnboarded,
         isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
@@ -266,17 +263,34 @@ router.get('/admin/relations', requireAuth, async (req: AuthenticatedRequest, re
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    // Get all parents
     const parentProfiles = await db.query.user.findMany({
-      where: eq(user.role, 'parent'),
-      with: {
-        child: true
-      }
+      where: eq(user.role, 'parent')
     });
 
-    const relations = parentProfiles.map(parent => ({
-      parent,
-      child: parent.child || null
-    }));
+    // Get parent-child relationships and build relations structure
+    const relations = await Promise.all(
+      parentProfiles.map(async (parent) => {
+        // Get children for this parent
+        const childRelations = await db
+          .select({ childId: parentChildRelations.childId })
+          .from(parentChildRelations)
+          .where(eq(parentChildRelations.parentId, parent.id));
+
+        // Get child details
+        const children = childRelations.length > 0 
+          ? await db.query.user.findMany({
+              where: (user, { inArray }) => inArray(user.id, childRelations.map(rel => rel.childId))
+            })
+          : [];
+
+        // For backward compatibility, return only the first child in the old format
+        return {
+          parent,
+          child: children.length > 0 ? children[0] : null
+        };
+      })
+    );
 
     res.json(relations);
   } catch (error) {
@@ -285,37 +299,7 @@ router.get('/admin/relations', requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
-// Admin: Update child assignment
-router.patch('/admin/:parentId/child', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    // Basic admin check
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const { parentId } = req.params;
-    const { childId } = req.body;
-
-    const [updatedProfile] = await db.update(user)
-      .set({
-        childId: childId || null,
-        updatedAt: new Date()
-      })
-      .where(eq(user.id, parentId))
-      .returning();
-
-    if (!updatedProfile) {
-      return res.status(404).json({ error: 'Parent profile not found' });
-    }
-
-    res.json(updatedProfile);
-  } catch (error) {
-    console.error('Update child assignment error:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// New multi-child relationship endpoints
+// Multi-child relationship endpoints
 
 // Get all parent-child relationships (new format)
 router.get('/admin/parent-child-relationships', requireAuth, async (req: AuthenticatedRequest, res) => {

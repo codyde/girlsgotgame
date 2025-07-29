@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react'
 import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon, Palette } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
-import { api } from '../lib/api'
-import { User } from '../types'
 import toast from 'react-hot-toast'
 import { uploadAvatar, validateFileSize } from '../lib/upload'
 
@@ -75,6 +73,7 @@ export function ProfileScreen() {
     input.click()
   }
 
+
   if (!profile) {
     return (
       <div className="p-4 flex items-center justify-center min-h-screen">
@@ -94,7 +93,7 @@ export function ProfileScreen() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <UserIcon className="w-8 h-8 text-primary-600" />
-              <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">My Profile</h1>
+              <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">My Profile</h1>
             </div>
             <button
               onClick={() => setIsEditing(!isEditing)}
@@ -210,11 +209,13 @@ export function ProfileScreen() {
               <div className="text-sm font-body text-green-700">This Week</div>
             </div>
           </div>
+
         </div>
       </div>
 
       {/* Activity sections */}
       <div className="px-4 lg:px-6 space-y-4 lg:space-y-6 max-w-2xl lg:mx-auto">
+
         {/* Theme Selection */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
           <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">

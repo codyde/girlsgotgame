@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { Calendar, Clock, MapPin, Users, Trophy } from 'lucide-react'
 import { Game } from '../types'
 import { api } from '../lib/api'
+import { useAuth } from '../contexts/AuthContext'
 import toast from 'react-hot-toast'
 
 interface GamesScreenProps {
@@ -9,30 +10,49 @@ interface GamesScreenProps {
 }
 
 export function GamesScreen({ onGameClick }: GamesScreenProps) {
-  const [games, setGames] = useState<Game[]>([])
+  const { user } = useAuth()
+  const [allGames, setAllGames] = useState<Game[]>([])
+  const [myGames, setMyGames] = useState<Game[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'my-games' | 'all-games'>('my-games')
 
   useEffect(() => {
-    fetchGames()
-  }, [])
+    fetchAllData()
+  }, [user])
 
-  const fetchGames = async () => {
+  const fetchAllData = async () => {
     try {
-      const { data, error } = await api.getGames()
-      if (error) throw new Error(error)
-      
-      // Sort games by date (soonest first) - additional client-side sorting
-      const sortedGames = (data || []).sort((a, b) => 
+      // Fetch both all games and my games in parallel
+      const [allGamesResponse, myGamesResponse] = await Promise.all([
+        api.getGames(),
+        user ? api.getMyGames() : Promise.resolve({ data: [], error: null })
+      ])
+
+      if (allGamesResponse.error) throw new Error(allGamesResponse.error)
+      if (myGamesResponse.error) throw new Error(myGamesResponse.error)
+
+      // Sort games by date (soonest first)
+      const sortedAllGames = (allGamesResponse.data || []).sort((a, b) => 
         new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
       )
-      
-      setGames(sortedGames)
+      const sortedMyGames = (myGamesResponse.data || []).sort((a, b) => 
+        new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
+      )
+
+      setAllGames(sortedAllGames)
+      setMyGames(sortedMyGames)
+
+      // If user has no games of their own, default to all games tab
+      if (user && sortedMyGames.length === 0) {
+        setActiveTab('all-games')
+      }
     } catch (error) {
       toast.error('Error loading games: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setLoading(false)
     }
   }
+
 
   const formatGameDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -77,6 +97,7 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
     }
   }
 
+
   if (loading) {
     return (
       <div className="p-4 lg:p-6 pb-20 lg:pb-0 max-w-4xl lg:mx-auto">
@@ -94,7 +115,7 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
       <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
         <div className="flex items-center gap-3 mb-2">
           <Calendar className="w-8 h-8 text-primary-600" />
-          <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Games</h1>
+          <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Games</h1>
         </div>
         <p className="font-body text-text-secondary">Upcoming and recent game schedule</p>
       </div>
@@ -102,15 +123,60 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="p-4 lg:p-6 pb-20 lg:pb-6 max-w-4xl lg:mx-auto">
-          {games.length === 0 ? (
-            <div className="text-center py-12">
-              <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-              <h2 className="text-xl font-bold font-heading text-gray-600 mb-2">No Games Scheduled</h2>
-              <p className="font-body text-gray-500">Check back later for upcoming games!</p>
+          {/* Tabs */}
+          {user && (
+            <div className="mb-6">
+              <div className="border-b border-gray-200">
+                <nav className="-mb-px flex space-x-8">
+                  <button
+                    onClick={() => setActiveTab('my-games')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                      activeTab === 'my-games'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    My Games
+                    {myGames.length > 0 && (
+                      <span className="ml-2 bg-primary-100 text-primary-600 py-0.5 px-2 rounded-full text-xs font-medium">
+                        {myGames.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab('all-games')}
+                    className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                      activeTab === 'all-games'
+                        ? 'border-primary-500 text-primary-600'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    }`}
+                  >
+                    All Games
+                    <span className="ml-2 bg-gray-100 text-gray-600 py-0.5 px-2 rounded-full text-xs font-medium">
+                      {allGames.length}
+                    </span>
+                  </button>
+                </nav>
+              </div>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {games.map((game) => {
+          )}
+
+          {(() => {
+            const currentGames = user ? (activeTab === 'my-games' ? myGames : allGames) : allGames
+            const emptyTitle = activeTab === 'my-games' ? 'No Games Played' : 'No Games Scheduled'
+            const emptyMessage = activeTab === 'my-games' 
+              ? 'You haven\'t played in any games yet. Games you participate in will appear here!'
+              : 'Check back later for upcoming games!'
+
+            return currentGames.length === 0 ? (
+              <div className="text-center py-12">
+                <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <h2 className="text-xl font-bold font-heading text-gray-600 mb-2">{emptyTitle}</h2>
+                <p className="font-body text-gray-500">{emptyMessage}</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {currentGames.map((game) => {
                 const status = getGameStatus(game)
                 const winner = getWinner(game)
                 const isHomeTeam = game.isHome
@@ -210,9 +276,10 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
                     </div>
                   </div>
                 )
-              })}
-            </div>
-          )}
+                })}
+              </div>
+            )
+          })()}
         </div>
       </div>
     </div>

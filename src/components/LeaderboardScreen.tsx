@@ -69,7 +69,7 @@ export function LeaderboardScreen() {
         <div className="max-w-4xl lg:mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <Trophy className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">Team Leaderboard</h1>
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Team Leaderboard</h1>
           </div>
           <p className="text-text-secondary font-body">See who's crushing their training goals!</p>
         </div>
