@@ -44,7 +44,7 @@ export const auth: any = betterAuth({
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
     },
   },
-  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3001/api/auth",
+  baseURL: process.env.BETTER_AUTH_URL || "http://localhost:3001",
   secret: process.env.BETTER_AUTH_SECRET as string,
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 days
@@ -55,8 +55,8 @@ export const auth: any = betterAuth({
     }
   },
   trustedOrigins: process.env.NODE_ENV === 'production'
-      ? ["https://girlsgotgame.app", "myapp://"]
-      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "myapp://", "exp://192.168.1.8:8081/--"],
+      ? ["https://girlsgotgame.app", "girlsgotgameios://"]
+      : ["http://localhost:5173", "http://localhost:5174", "http://localhost:3001", "girlsgotgameios://"],
   callbacks: {
     redirect: async (url: string, request: any) => {
       const { headers } = request;
@@ -69,12 +69,12 @@ export const auth: any = betterAuth({
       });
       
       // Check if this is a mobile request by detecting CFNetwork user agent
-      const isMobileRequest = headers['user-agent']?.includes('CFNetwork') || 
-                             headers['user-agent']?.includes('boltexponativewind');
+      const isMobileRequest = headers['user-agent']?.includes('CFNetwork') ||
+                         headers['user-agent']?.includes('GirlsGotGame');
       
       // For OAuth callbacks from mobile, redirect to mobile app
       if (isMobileRequest && url.includes('/')) {
-        const mobileRedirect = 'myapp:///feed';
+        const mobileRedirect = 'girlsgotgameios://';
         console.log('📱 [BETTER AUTH] Mobile detected - redirecting to:', mobileRedirect);
         return mobileRedirect;
       }
