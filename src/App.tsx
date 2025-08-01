@@ -158,8 +158,11 @@ function AppContent() {
             
             {/* Toggle Button */}
             <button
-              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className={`absolute top-1/2 -translate-y-1/2 ${sidebarCollapsed ? '-right-4' : '-right-4'} w-8 h-8 bg-bg-primary border border-border-primary rounded-full shadow-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-all duration-200 z-10`}
+              onClick={() => {
+                console.log('Sidebar toggle clicked, current state:', sidebarCollapsed);
+                setSidebarCollapsed(!sidebarCollapsed);
+              }}
+              className={`absolute top-1/2 -translate-y-1/2 ${sidebarCollapsed ? '-right-4' : '-right-4'} w-8 h-8 bg-bg-primary border border-border-primary rounded-full shadow-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-bg-tertiary transition-all duration-200 z-[100] cursor-pointer`}
               title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}

@@ -32,6 +32,12 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [allUsers, setAllUsers] = useState<User[]>([])
   const [selectedUserId, setSelectedUserId] = useState('')
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null)
+  
+  // Manual player state
+  const [manualPlayerName, setManualPlayerName] = useState('')
+  const [manualPlayerJersey, setManualPlayerJersey] = useState('')
+  const [manualPlayerIsStarter, setManualPlayerIsStarter] = useState(false)
+  const [manualPlayerNotes, setManualPlayerNotes] = useState('')
   const [showActivities, setShowActivities] = useState(false)
   const [showLiveActivity, setShowLiveActivity] = useState(false)
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
@@ -212,6 +218,34 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
       setSelectedUserId('')
     } catch (error) {
       toast.error('Error adding player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const addManualPlayer = async () => {
+    if (!manualPlayerName.trim()) {
+      toast.error('Player name is required')
+      return
+    }
+    
+    try {
+      const { error } = await api.addManualPlayerToGame(
+        gameId, 
+        manualPlayerName.trim(),
+        manualPlayerJersey ? parseInt(manualPlayerJersey) : undefined,
+        manualPlayerIsStarter,
+        manualPlayerNotes.trim() || undefined
+      )
+      if (error) throw new Error(error)
+      
+      toast.success('Manual player added to game!')
+      fetchGameDetails()
+      setShowAddPlayer(false)
+      setManualPlayerName('')
+      setManualPlayerJersey('')
+      setManualPlayerIsStarter(false)
+      setManualPlayerNotes('')
+    } catch (error) {
+      toast.error('Error adding manual player: ' + (error instanceof Error ? error.message : String(error)))
     }
   }
 
@@ -895,6 +929,10 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                     onClick={() => {
                       setShowAddPlayer(false)
                       setSelectedUserId('')
+                      setManualPlayerName('')
+                      setManualPlayerJersey('')
+                      setManualPlayerIsStarter(false)
+                      setManualPlayerNotes('')
                     }}
                     className="p-1 text-gray-400 hover:text-gray-600"
                   >
@@ -930,6 +968,58 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                         Add Player
                       </button>
                     )}
+                  </div>
+
+                  {/* Manual Player Addition */}
+                  <div className="border-t border-gray-200 pt-4">
+                    <label className="block text-sm font-medium font-body text-gray-700 mb-2">
+                      Or Add Manual Player
+                    </label>
+                    <div className="space-y-3">
+                      <div>
+                        <input
+                          type="text"
+                          value={manualPlayerName}
+                          onChange={(e) => setManualPlayerName(e.target.value)}
+                          placeholder="Player name"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <input
+                          type="number"
+                          value={manualPlayerJersey}
+                          onChange={(e) => setManualPlayerJersey(e.target.value)}
+                          placeholder="Jersey #"
+                          min="0"
+                          max="99"
+                          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                        />
+                        <label className="flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={manualPlayerIsStarter}
+                            onChange={(e) => setManualPlayerIsStarter(e.target.checked)}
+                            className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className="ml-2 text-sm text-gray-700 font-body">Starter</span>
+                        </label>
+                      </div>
+                      <textarea
+                        value={manualPlayerNotes}
+                        onChange={(e) => setManualPlayerNotes(e.target.value)}
+                        placeholder="Notes (optional)"
+                        rows={2}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                      <button
+                        onClick={addManualPlayer}
+                        disabled={!manualPlayerName.trim()}
+                        className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-body"
+                      >
+                        Add Manual Player
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>

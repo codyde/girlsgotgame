@@ -250,7 +250,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('🚀 Starting Google sign-in process...');
       
-      // Better Auth Google OAuth - use the correct social sign-in endpoint
+      // Use Better Auth's signInSocial API (POST request)
       const backendUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
       const signInUrl = `${backendUrl}/api/auth/sign-in/social`;
       
@@ -289,21 +289,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     try {
-      // Better Auth sign out
-      await api.signOut()
+      console.log('🚪 Starting sign out process...');
       
+      // Clear state immediately to show login screen
       setSession(null)
       setUser(null)
       setProfile(null)
       setGlobalSession(null)
       
-      // Force page refresh to return to login screen
-      setTimeout(() => {
-        window.location.reload()
-      }, 100)
+      // Clear any stored session data first
+      try {
+        // Clear localStorage
+        localStorage.clear();
+        
+        // Clear sessionStorage  
+        sessionStorage.clear();
+        
+        // Clear cookies by setting them to expire
+        document.cookie.split(";").forEach(cookie => {
+          const eqPos = cookie.indexOf("=");
+          const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+        });
+        
+        console.log('✅ Local storage and cookies cleared');
+      } catch (storageError) {
+        console.warn('Storage cleanup error (non-critical):', storageError);
+      }
+      
+      // Now properly await the server sign out
+      try {
+        await api.signOut();
+        console.log('✅ Server session cleared');
+      } catch (error) {
+        console.warn('Better Auth sign out failed (non-critical):', error);
+      }
+      
+      console.log('✅ Sign out completed, should show login screen');
     } catch (error: any) {
       console.error('Sign out error:', error)
-      toast.error('Error signing out')
+      
+      // Even if sign out fails, clear local state and show login
+      setSession(null)
+      setUser(null)
+      setProfile(null)
+      setGlobalSession(null)
+      
+      toast.error('Signed out (with errors)')
     }
   }
 

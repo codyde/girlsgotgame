@@ -9,12 +9,15 @@ import path from 'path';
 import swaggerUi from 'swagger-ui-express';
 import yaml from 'yaml';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import { setSocketIO } from './lib/socket';
 
 // Route imports
 import authRoutes from './routes/auth';
+import mobileAuthRoutes from './routes/mobile-auth';
+import adminRoutes from './routes/admin';
 import profileRoutes from './routes/profiles';
 import workoutRoutes from './routes/workouts';
 import postRoutes from './routes/posts';
@@ -27,7 +30,7 @@ import reportsRoutes from './routes/reports';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 import { db } from './db/index';
-import { chatMessages, user, teamMembers } from './db/schema';
+import { chatMessages, user, teamMembers, session } from './db/schema';
 import { eq, and } from 'drizzle-orm';
 // UploadThing removed - using Cloudflare R2 instead
 
@@ -41,8 +44,8 @@ const server = createServer(app);
 const io = new Server(server, {
   cors: {
     origin: process.env.NODE_ENV === 'production'
-      ? 'https://girlsgotgame.app'
-      : ['http://localhost:5173', 'http://localhost:5174'],
+      ? ['https://girlsgotgame.app']
+      : ['http://localhost:5173'],
     credentials: true
   }
 });
@@ -52,18 +55,22 @@ setSocketIO(io);
 
 const PORT = process.env.PORT || 3001;
 
-// Middleware (but NOT express.json() yet - it interferes with Better Auth)
+// Core middleware - order matters
 app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? 'https://girlsgotgame.app'
-    : ['http://localhost:5173', 'http://localhost:5174'],
+    ? ['https://girlsgotgame.app']
+    : ['http://localhost:5173'],
   credentials: true
 }));
-app.use(morgan('combined'));
+
+// Request logging (only in development)
+if (process.env.NODE_ENV !== 'production') {
+  app.use(morgan('dev'));
+}
 
 // Health check
-app.get('/health', (req, res) => {
+app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
@@ -113,11 +120,9 @@ try {
       });
     });
     
-    console.log('📚 Swagger UI available at:');
-    console.log('   - /api-docs (primary)');
-    console.log('   - /api (browser requests only)');
+    // Swagger UI configured successfully
   } else {
-    console.log('⚠️ swagger.yaml not found - Swagger UI not available');
+    // swagger.yaml not found - Swagger UI not available
   }
 } catch (error) {
   console.error('❌ Error setting up Swagger UI:', error);
@@ -125,201 +130,14 @@ try {
 
 // Better Auth handler MUST come before express.json() middleware
 
-// Test route to verify routing works
-app.get('/api/auth/test', (req, res) => {
-  res.json({ message: 'Better Auth test route working' });
-});
-
-// Debug route to check Better Auth API methods
-app.get('/api/debug/auth-methods', (req, res) => {
-  try {
-    console.log('🔧 Better Auth API methods:', Object.keys(auth.api));
-    console.log('🔧 Better Auth handlers:', Object.keys(auth.handler || {}));
-    res.json({ 
-      apiMethods: Object.keys(auth.api),
-      handlers: Object.keys(auth.handler || {}),
-      baseUrl: auth.options?.baseURL || 'not set'
-    });
-  } catch (error) {
-    console.error('🔴 Debug error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
-// Test route to initiate Google OAuth using Better Auth API
-app.get('/api/test-google-signin', async (req, res) => {
-  try {
-    // Try to use Better Auth API directly with proper context
-    const result = await auth.api.signInSocial({
-      body: {
-        provider: 'google',
-        callbackURL: 'http://localhost:5174/'
-      },
-      headers: req.headers as any
-    });
-    console.log('🔧 Better Auth result:', result);
-    
-    if (result.url) {
-      res.redirect(result.url);
-    } else {
-      res.json({ result });
-    }
-  } catch (error) {
-    console.error('🔴 Better Auth API error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
-// Debug route to check verification table
-app.get('/api/debug/verification', async (req, res) => {
-  try {
-    const { auth } = await import('./config/auth');
-    console.log('🔧 Checking verification table');
-    res.json({ message: 'OAuth is working! Check server logs for callback details.' });
-  } catch (error) {
-    console.error('🔴 Verification debug error:', error);
-    res.status(500).json({ error: (error as Error).message });
-  }
-});
-
 // Handle Better Auth error page - redirect back to frontend with error
 app.get('/api/auth/error', (req, res) => {
   const error = req.query.error;
-  console.log('🔴 Better Auth error:', error);
-  
   // Redirect back to frontend with error parameter
-  res.redirect(`http://localhost:5174/?auth_error=${encodeURIComponent(error as string)}`);
+  res.redirect(`http://localhost:5173/?auth_error=${encodeURIComponent(error as string)}`);
 });
 
-// Custom logging middleware for Better Auth routes
-app.all("/api/auth/*", (req, res, next) => {
-  const startTime = Date.now();
-  const { method, url, headers, query, body } = req;
-  
-  // For POST requests, try to read the raw body if it hasn't been parsed yet
-  if (method === 'POST' && headers['content-type']?.includes('application/json')) {
-    let rawBody = '';
-    req.on('data', (chunk) => {
-      rawBody += chunk;
-    });
-    req.on('end', () => {
-      if (rawBody && url.includes('/sign-in/social')) {
-        try {
-          const parsedBody = JSON.parse(rawBody);
-          console.log('📦 [RAW BODY] POST /api/auth/sign-in/social:', {
-            rawBody,
-            parsedBody,
-            provider: parsedBody?.provider,
-            callbackURL: parsedBody?.callbackURL,
-            timestamp: new Date().toISOString()
-          });
-        } catch (e) {
-          console.log('📦 [RAW BODY] Failed to parse:', { rawBody, error: e.message });
-        }
-      }
-    });
-  }
-  
-  // Log inbound request details
-  console.log(`🔐 [AUTH REQUEST] ${method} ${url}`, {
-    timestamp: new Date().toISOString(),
-    method,
-    url,
-    path: req.path,
-    query,
-    userAgent: headers['user-agent'],
-    referer: headers.referer,
-    origin: headers.origin,
-    forwardedFor: headers['x-forwarded-for'],
-    realIp: headers['x-real-ip'],
-    clientIp: req.ip,
-    contentType: headers['content-type'],
-    contentLength: headers['content-length'],
-    accept: headers.accept,
-    authorization: headers.authorization ? 'present' : 'none',
-    cookies: headers.cookie ? 'present' : 'none',
-    sessionCookie: headers.cookie && headers.cookie.includes('better-auth.session_token') ? 'present' : 'none',
-    // Log body for POST requests (but sanitize sensitive data)
-    bodyPresent: body ? Object.keys(body).length > 0 : false,
-    bodyKeys: body ? Object.keys(body) : [],
-  });
-
-  // Log specific details for social sign-in requests
-  if (url.includes('/sign-in/social')) {
-    // For web: provider is in URL path like /sign-in/social/google
-    const urlProvider = req.path.split('/').pop();
-    // For mobile: provider might be in request body
-    const bodyProvider = body?.provider;
-    // Use the more specific one
-    const actualProvider = (urlProvider && urlProvider !== 'social') ? urlProvider : bodyProvider || 'unknown';
-    
-    // Determine detection source for logging
-    const detectionSource = (urlProvider && urlProvider !== 'social') ? 'url' : 
-                           (bodyProvider) ? 'body' : 
-                           (method === 'POST') ? 'body_unavailable' : 'url';
-
-    console.log(`🔗 [SOCIAL SIGN-IN] Provider: ${actualProvider}`, {
-      provider: actualProvider,
-      detectedFrom: detectionSource,
-      requestMethod: method,
-      contentType: headers['content-type'],
-      callbackUrl: query.callbackURL || query.callback_url || query.redirect_uri || body?.callbackURL,
-      state: query.state || body?.state,
-      code: query.code ? 'present' : 'none',
-      error: query.error || body?.error,
-      errorDescription: query.error_description || body?.error_description,
-    });
-  }
-
-  // Log callback requests
-  if (url.includes('/callback')) {
-    const pathParts = req.path.split('/');
-    const provider = pathParts[pathParts.length - 1] || pathParts[pathParts.length - 2] || 'unknown';
-
-    console.log(`🔄 [AUTH CALLBACK]`, {
-      provider: provider,
-      fullPath: req.path,
-      state: query.state,
-      code: query.code ? 'present' : 'none',
-      error: query.error,
-      errorDescription: query.error_description,
-    });
-  }
-
-  // Override res.json to log response
-  const originalJson = res.json;
-  res.json = function(data) {
-    const duration = Date.now() - startTime;
-    console.log(`🔐 [AUTH RESPONSE] ${method} ${url}`, {
-      statusCode: res.statusCode,
-      duration: `${duration}ms`,
-      hasData: !!data,
-      dataKeys: data && typeof data === 'object' ? Object.keys(data) : [],
-    });
-    return originalJson.call(this, data);
-  };
-
-  // Override res.redirect to log redirects
-  const originalRedirect = res.redirect;
-  res.redirect = function(...args) {
-    const duration = Date.now() - startTime;
-    console.log(`🔐 [AUTH REDIRECT] ${method} ${url}`, {
-      statusCode: res.statusCode,
-      duration: `${duration}ms`,
-      redirectTo: args[args.length - 1], // Last argument is always the URL
-    });
-    return originalRedirect.apply(this, args);
-  };
-
-  next();
-});
-
-// Handle Better Auth routes - use the official pattern from documentation
-// IMPORTANT: This MUST come before express.json() middleware
-app.all("/api/auth/*", toNodeHandler(auth));
-
-// NOW add express.json() middleware for other routes
-app.use(express.json());
+// Mobile endpoint will be preserved and mounted inside initializeServer()
 
 // Socket.IO authentication middleware
 io.use(async (socket: Socket, next: (err?: Error) => void) => {
@@ -480,9 +298,33 @@ io.on('connection', (socket: Socket) => {
 
 // Initialize server
 const initializeServer = async () => {
+  // 📱 BACKWARD COMPATIBILITY: Redirect old mobile endpoints to new paths
+  app.post('/api/auth/sign-in/mobile', express.json(), async (req, res, next) => {
+    // Forward to the new mobile auth service
+    req.url = '/sign-in/mobile';
+    mobileAuthRoutes(req, res, next);
+  });
+  
+  app.post('/api/auth/sign-out/mobile', express.json(), async (req, res, next) => {
+    // Forward to the new mobile auth service
+    req.url = '/sign-out/mobile';
+    mobileAuthRoutes(req, res, next);
+  });
+  
+  // Mobile routes at new paths (for future iOS app updates)
+  app.use('/api/mobile-auth', express.json(), mobileAuthRoutes);
+  
+  // Better Auth handler - handles remaining /api/auth/* (OAuth, sessions, etc.)
+  app.all('/api/auth/*', toNodeHandler(auth));
+  
+  // JSON parsing middleware for all other routes
+  app.use(express.json());
+  
+  // Custom auth utilities (session checking, user validation) 
+  app.use('/api/auth-utils', authRoutes);
 
-  // Other API Routes
-  app.use('/api', authRoutes);
+  // API routes
+  app.use('/api/admin', adminRoutes);
   app.use('/api/profiles', profileRoutes);
   app.use('/api/workouts', workoutRoutes);
   app.use('/api/posts', postRoutes);
@@ -504,8 +346,12 @@ const initializeServer = async () => {
     res.status(404).json({ error: 'Route not found' });
   });
 
-  server.listen(PORT, () => {
+  const portNumber = typeof PORT === 'string' ? parseInt(PORT, 10) : PORT;
+  server.listen(portNumber, '0.0.0.0', () => {
     console.log(`Server running on port ${PORT}`);
+    console.log(`Server accessible at:`);
+    console.log(`  - http://localhost:${PORT}`);
+    console.log(`  - http://192.168.1.8:${PORT}`);
     console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 };

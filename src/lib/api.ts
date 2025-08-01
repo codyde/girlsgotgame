@@ -54,13 +54,13 @@ class ApiClient {
     }
   }
 
-  // Auth endpoints
+  // Auth endpoints - use our custom session endpoint that works with Better Auth
   async getCurrentSession() {
-    return this.request('/me');
+    return this.request('/auth-utils/me');
   }
 
   async signInWithGoogle() {
-    // This will redirect to Google OAuth using Better Auth format
+    // Direct redirect to Better Auth Google OAuth
     window.location.href = `${this.baseUrl}/auth/sign-in/social/google`;
   }
 

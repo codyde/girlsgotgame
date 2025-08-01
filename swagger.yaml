@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Girls Got Game API
   description: Basketball training application API for mobile and web clients
-  version: 1.0.0
+  version: 2.0.0
   contact:
     name: Girls Got Game API Support
     email: support@girlsgotgame.app
@@ -88,7 +88,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /me:
+  /auth-utils/me:
     get:
       tags:
         - Authentication
@@ -113,30 +113,7 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
-  /auth/sign-out:
-    post:
-      tags:
-        - Authentication
-      summary: Sign out current user
-      description: Invalidate the current user session
-      security:
-        - cookieAuth: []
-      responses:
-        '200':
-          description: Successfully signed out
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  success:
-                    type: boolean
-                    example: true
-        '500':
-          $ref: '#/components/responses/InternalServerError'
-
-  # User existence check endpoint
-  /check-user:
+  /auth-utils/check-user:
     post:
       tags:
         - Authentication
@@ -172,6 +149,71 @@ paths:
                     nullable: true
         '400':
           $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Mobile Authentication Endpoints
+  /mobile-auth/sign-in/mobile:
+    post:
+      tags:
+        - Mobile Authentication
+      summary: Mobile OAuth sign-in
+      description: Authenticate mobile users with Google ID token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider:
+                  type: string
+                  enum: [google]
+                  example: google
+                idToken:
+                  type: string
+                  description: Google ID token from mobile OAuth
+              required:
+                - provider
+                - idToken
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/AuthUser'
+                  session:
+                    $ref: '#/components/schemas/Session'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /mobile-auth/sign-out/mobile:
+    post:
+      tags:
+        - Mobile Authentication
+      summary: Mobile sign out
+      description: Sign out mobile user and invalidate session
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Successfully signed out
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -1006,6 +1048,546 @@ paths:
         '500':
           $ref: '#/components/responses/InternalServerError'
 
+  # Games Endpoints
+  /games:
+    get:
+      tags:
+        - Games
+      summary: Get all games
+      description: Retrieve all games (public endpoint)
+      responses:
+        '200':
+          description: Games retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Game'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Games
+      summary: Create game
+      description: Create a new game (admin only)
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGame'
+      responses:
+        '201':
+          description: Game created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /games/my-games:
+    get:
+      tags:
+        - Games
+      summary: Get user's games
+      description: Get games where the authenticated user or their children participated
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: User games retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Game'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /games/{gameId}:
+    get:
+      tags:
+        - Games
+      summary: Get game by ID
+      description: Retrieve a specific game by ID
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Game retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GameWithDetails'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    patch:
+      tags:
+        - Games
+      summary: Update game
+      description: Update an existing game (admin only)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGame'
+      responses:
+        '200':
+          description: Game updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Game'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    delete:
+      tags:
+        - Games
+      summary: Delete game
+      description: Delete a game (admin only)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204':
+          description: Game deleted successfully
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /games/{gameId}/activities:
+    get:
+      tags:
+        - Games
+      summary: Get game activities
+      description: Retrieve activities for a specific game
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: gameId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Game activities retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/GameActivity'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /games/user/{userId}:
+    get:
+      tags:
+        - Games
+      summary: Get games for specific user
+      description: Retrieve games where a specific user participated (admin or self only)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User games retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Game'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Admin Endpoints
+  /admin/users:
+    get:
+      tags:
+        - Admin
+      summary: Get all users
+      description: Retrieve all users (admin only)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Search users by email or name
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/admins:
+    get:
+      tags:
+        - Admin
+      summary: Get all admin users
+      description: Retrieve all users with admin permissions
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Admin users retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminUser'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/grant-admin:
+    post:
+      tags:
+        - Admin
+      summary: Grant admin permissions
+      description: Grant admin permissions to a user
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+                email:
+                  type: string
+                  format: email
+              oneOf:
+                - required: [userId]
+                - required: [email]
+      responses:
+        '200':
+          description: Admin permissions granted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/AdminUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/revoke-admin:
+    post:
+      tags:
+        - Admin
+      summary: Revoke admin permissions
+      description: Revoke admin permissions from a user
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                  format: uuid
+              required:
+                - userId
+      responses:
+        '200':
+          description: Admin permissions revoked successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/AdminUser'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /admin/check-admin:
+    get:
+      tags:
+        - Admin
+      summary: Check admin status
+      description: Check if current user has admin permissions
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Admin status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  isAdmin:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Media Endpoints
+  /media/upload:
+    post:
+      tags:
+        - Media
+      summary: Upload media file
+      description: Upload image or video files with processing
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image or video file (max 100MB)
+      responses:
+        '200':
+          description: Media uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUpload'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /media:
+    get:
+      tags:
+        - Media
+      summary: Get user media
+      description: Retrieve media files uploaded by the authenticated user
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [image, video]
+          description: Filter by media type
+      responses:
+        '200':
+          description: Media files retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MediaFile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Reports Endpoints
+  /reports:
+    get:
+      tags:
+        - Reports
+      summary: Get all reports
+      description: Retrieve all user reports (admin only)
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, resolved, dismissed]
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [post, media]
+      responses:
+        '200':
+          description: Reports retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+    post:
+      tags:
+        - Reports
+      summary: Create report
+      description: Report inappropriate content
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReport'
+      responses:
+        '201':
+          description: Report created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -1025,6 +1607,9 @@ components:
         name:
           type: string
           nullable: true
+        isAdmin:
+          type: boolean
+          default: false
 
     Session:
       type: object
@@ -1077,6 +1662,9 @@ components:
           type: boolean
         isVerified:
           type: boolean
+        isAdmin:
+          type: boolean
+          default: false
         jerseyNumber:
           type: integer
           minimum: 1
@@ -1086,6 +1674,30 @@ components:
           type: string
           format: date-time
         updatedAt:
+          type: string
+          format: date-time
+
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+          nullable: true
+        role:
+          type: string
+          enum: [player, parent]
+        isAdmin:
+          type: boolean
+        isVerified:
+          type: boolean
+        totalPoints:
+          type: integer
+        createdAt:
           type: string
           format: date-time
 
@@ -1255,6 +1867,10 @@ components:
           type: string
           format: uuid
           nullable: true
+        gameId:
+          type: string
+          format: uuid
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -1280,6 +1896,12 @@ components:
                   nullable: true
             workout:
               $ref: '#/components/schemas/Workout'
+            game:
+              $ref: '#/components/schemas/Game'
+            media:
+              type: array
+              items:
+                $ref: '#/components/schemas/MediaFile'
             likes:
               type: array
               items:
@@ -1287,6 +1909,16 @@ components:
                 properties:
                   userId:
                     type: string
+                  user:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      avatarUrl:
+                        type: string
+                        nullable: true
             comments:
               type: array
               items:
@@ -1310,6 +1942,9 @@ components:
           type: string
           format: uri
         workoutId:
+          type: string
+          format: uuid
+        gameId:
           type: string
           format: uuid
 
@@ -1378,6 +2013,55 @@ components:
           type: integer
         type:
           type: string
+
+    MediaUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        mediaType:
+          type: string
+          enum: [image, video]
+        processingStatus:
+          type: string
+          enum: [processing, completed, failed]
+
+    MediaFile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        url:
+          type: string
+          format: uri
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+        mimeType:
+          type: string
+        mediaType:
+          type: string
+          enum: [image, video]
+        processingStatus:
+          type: string
+          enum: [processing, completed, failed]
+        createdAt:
+          type: string
+          format: date-time
 
     Team:
       type: object
@@ -1475,6 +2159,184 @@ components:
           type: string
           nullable: true
 
+    Game:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        teamName:
+          type: string
+        isHome:
+          type: boolean
+        opponentTeam:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        homeScore:
+          type: integer
+          nullable: true
+        awayScore:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [scheduled, in_progress, completed, cancelled]
+        isSharedToFeed:
+          type: boolean
+          default: false
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    GameWithDetails:
+      allOf:
+        - $ref: '#/components/schemas/Game'
+        - type: object
+          properties:
+            players:
+              type: array
+              items:
+                $ref: '#/components/schemas/GamePlayer'
+            activities:
+              type: array
+              items:
+                $ref: '#/components/schemas/GameActivity'
+
+    GamePlayer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gameId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          nullable: true
+        manualPlayerId:
+          type: string
+          format: uuid
+          nullable: true
+        playerName:
+          type: string
+        jerseyNumber:
+          type: integer
+          nullable: true
+
+    GameActivity:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gameId:
+          type: string
+          format: uuid
+        activityType:
+          type: string
+        description:
+          type: string
+        metadata:
+          type: object
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateGame:
+      type: object
+      required:
+        - teamName
+        - isHome
+        - opponentTeam
+        - gameDate
+      properties:
+        teamName:
+          type: string
+        isHome:
+          type: boolean
+        opponentTeam:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        notes:
+          type: string
+
+    UpdateGame:
+      type: object
+      properties:
+        teamName:
+          type: string
+        isHome:
+          type: boolean
+        opponentTeam:
+          type: string
+        gameDate:
+          type: string
+          format: date-time
+        homeScore:
+          type: integer
+        awayScore:
+          type: integer
+        notes:
+          type: string
+        status:
+          type: string
+          enum: [scheduled, in_progress, completed, cancelled]
+        isSharedToFeed:
+          type: boolean
+
+    Report:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reporterId:
+          type: string
+        reportType:
+          type: string
+          enum: [post, media]
+        reportedItemId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+        status:
+          type: string
+          enum: [pending, resolved, dismissed]
+          default: pending
+        createdAt:
+          type: string
+          format: date-time
+
+    CreateReport:
+      type: object
+      required:
+        - reportType
+        - reportedItemId
+        - reason
+      properties:
+        reportType:
+          type: string
+          enum: [post, media]
+        reportedItemId:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+
     Error:
       type: object
       properties:
@@ -1531,6 +2393,8 @@ components:
 tags:
   - name: Authentication
     description: User authentication and session management
+  - name: Mobile Authentication
+    description: Mobile-specific authentication endpoints
   - name: Profiles
     description: User profile management
   - name: Workouts
@@ -1543,3 +2407,11 @@ tags:
     description: Team and direct messaging
   - name: Invites
     description: Invite system for user onboarding
+  - name: Games
+    description: Basketball game management and tracking
+  - name: Admin
+    description: Administrative functions and user management
+  - name: Media
+    description: Media file management and processing
+  - name: Reports
+    description: Content reporting and moderation

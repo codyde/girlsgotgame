@@ -78,4 +78,6 @@ router.post('/check-user', async (req, res) => {
   }
 });
 
+// Mobile authentication is now handled by the dedicated mobile-auth.ts service
+
 export default router;

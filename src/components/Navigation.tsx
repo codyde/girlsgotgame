@@ -103,7 +103,7 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
                   title={isCollapsed ? tab.label : undefined}
                 >
                   <Icon className="w-5 h-5 flex-shrink-0" />
-                  {!isCollapsed && <span className="font-medium font-heading text-2xl">{tab.label}</span>}
+                  {!isCollapsed && <span className="font-medium font-heading text-lg">{tab.label}</span>}
                 </button>
                 {isNewPostButton && <div className="h-4 border-b border-border-primary/30 mx-4"></div>}
               </div>
@@ -119,7 +119,7 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
               title={isCollapsed ? 'Create Invite' : undefined}
             >
               <UserPlus className="w-5 h-5 flex-shrink-0" />
-              {!isCollapsed && <span className="font-medium font-heading text-2xl">Create Invite</span>}
+              {!isCollapsed && <span className="font-medium font-heading text-lg">Create Invite</span>}
             </button>
           )}
           <button
@@ -131,7 +131,7 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
             title={isCollapsed ? 'Sign Out' : undefined}
           >
             <LogOut className="w-5 h-5 flex-shrink-0" />
-            {!isCollapsed && <span className="font-medium font-heading text-2xl">Sign Out</span>}
+            {!isCollapsed && <span className="font-medium font-heading text-lg">Sign Out</span>}
           </button>
         </div>
       </nav>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { eq, desc, and } from 'drizzle-orm';
 import { db } from '../db';
 import { user, parentChildRelations } from '../db/schema';
-import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
+import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
 import { createProfileSchema, updateProfileSchema } from '../types';
 
 const router = Router();
@@ -237,12 +237,8 @@ router.get('/players', async (req, res) => {
 });
 
 // Admin: Get all profiles
-router.get('/admin/all', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/admin/all', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check - in production you'd want proper role-based auth
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     const allProfiles = await db.query.user.findMany({
       orderBy: [desc(user.totalPoints)]
@@ -256,12 +252,8 @@ router.get('/admin/all', requireAuth, async (req: AuthenticatedRequest, res) => 
 });
 
 // Admin: Get parent-child relationships
-router.get('/admin/relations', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/admin/relations', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     // Get all parents
     const parentProfiles = await db.query.user.findMany({
@@ -302,12 +294,8 @@ router.get('/admin/relations', requireAuth, async (req: AuthenticatedRequest, re
 // Multi-child relationship endpoints
 
 // Get all parent-child relationships (new format)
-router.get('/admin/parent-child-relationships', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.get('/admin/parent-child-relationships', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check
-    if (req.user?.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     // Get all relationships
     const relationships = await db
@@ -354,12 +342,8 @@ router.get('/admin/parent-child-relationships', requireAuth, async (req: Authent
 });
 
 // Add parent-child relationship
-router.post('/admin/parent-child-relationships', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.post('/admin/parent-child-relationships', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check
-    if (req.user?.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     const { parentId, childId } = req.body;
 
@@ -400,12 +384,8 @@ router.post('/admin/parent-child-relationships', requireAuth, async (req: Authen
 });
 
 // Remove parent-child relationship
-router.delete('/admin/parent-child-relationships/:relationId', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.delete('/admin/parent-child-relationships/:relationId', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check
-    if (req.user?.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     const { relationId } = req.params;
 
@@ -421,12 +401,8 @@ router.delete('/admin/parent-child-relationships/:relationId', requireAuth, asyn
 });
 
 // Approve user (mark as verified)
-router.patch('/admin/approve/:userId', requireAuth, async (req: AuthenticatedRequest, res) => {
+router.patch('/admin/approve/:userId', requireAuth, requireAdmin, async (req: AuthenticatedRequest, res) => {
   try {
-    // Basic admin check
-    if (req.user?.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
 
     const { userId } = req.params;
 

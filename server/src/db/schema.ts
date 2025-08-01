@@ -14,7 +14,8 @@ export const user = pgTable('user', {
   // Profile fields integrated into user table
   avatarUrl: varchar('avatar_url', { length: 500 }),
   totalPoints: integer('total_points').default(0).notNull(),
-  role: varchar('role', { length: 20 }).default('player').notNull(), // 'parent' | 'player'
+  role: varchar('role', { length: 20 }).default('player').notNull(), // 'parent' | 'player' - functional roles
+  isAdmin: boolean('is_admin').default(false).notNull(), // Platform admin permissions
   isOnboarded: boolean('is_onboarded').default(false).notNull(),
   isVerified: boolean('isverified').default(false).notNull(),
   jerseyNumber: integer('jersey_number'),
