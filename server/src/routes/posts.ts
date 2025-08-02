@@ -208,7 +208,7 @@ router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
     const { id } = req.params;
 
     // Check if user is admin
-    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    const isAdmin = req.user?.isAdmin === true;
     
     // If admin, delete any post. If not admin, only delete own posts
     const deleteCondition = isAdmin 

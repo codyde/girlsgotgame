@@ -136,7 +136,7 @@ interface FeedScreenProps {
 export function FeedScreen({ onGameClick, onNavigate, showNewPost: externalShowNewPost, setShowNewPost: externalSetShowNewPost }: FeedScreenProps = {}) {
   const { user, profile } = useAuth()
   const { socket, isConnected } = useSocket()
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)

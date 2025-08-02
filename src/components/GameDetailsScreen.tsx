@@ -43,7 +43,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
   const [myChildren, setMyChildren] = useState<User[]>([])
 
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
   const isParent = profile?.role === 'parent'
 
   useEffect(() => {
@@ -399,24 +399,26 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const isCompleted = game.homeScore !== null && game.awayScore !== null
 
   // Filter players based on user role
-  const visiblePlayers = isParent 
-    ? players.filter(player => {
-        // For parents, only show their children
-        const myChildIds = myChildren.map(child => child.id)
-        
-        // Check direct registered players
-        if (player.userId && myChildIds.includes(player.userId)) {
-          return true
-        }
-        
-        // Check manual players linked to their children
-        if (player.manualPlayer?.linkedUserId && myChildIds.includes(player.manualPlayer.linkedUserId)) {
-          return true
-        }
-        
-        return false
-      })
-    : players // Admins see all players
+  const visiblePlayers = isAdmin 
+    ? players // Admins see all players
+    : isParent 
+      ? players.filter(player => {
+          // For parents, only show their children
+          const myChildIds = myChildren.map(child => child.id)
+          
+          // Check direct registered players
+          if (player.userId && myChildIds.includes(player.userId)) {
+            return true
+          }
+          
+          // Check manual players linked to their children
+          if (player.manualPlayer?.linkedUserId && myChildIds.includes(player.manualPlayer.linkedUserId)) {
+            return true
+          }
+          
+          return false
+        })
+      : [] // Other users see no players
 
   return (
     <div className="h-full flex flex-col">

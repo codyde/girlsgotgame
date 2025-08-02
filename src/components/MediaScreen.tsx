@@ -23,7 +23,7 @@ export function MediaScreen({}: MediaScreenProps) {
   const [showReportDialog, setShowReportDialog] = useState<{ itemId: string; type: 'media' } | null>(null)
   const [reportReason, setReportReason] = useState('')
 
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
 
   useEffect(() => {
     loadMediaItems()
