@@ -23,6 +23,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         isOnboarded: true,
         isVerified: true,
         jerseyNumber: true,
+        isAdmin: true,
         createdAt: true,
         updatedAt: true
       }

@@ -18,10 +18,10 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
   const { signOut, user, profile } = useAuth()
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
 
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isVerified = profile?.isVerified === true
+  const isAdmin = profile?.isAdmin === true
   const isParent = profile?.role === 'parent'
   const isPlayer = profile?.role === 'player'
-  const isVerified = profile?.isVerified === true
   const canCreateInvites = isVerified && (isAdmin || isParent)
 
   // Helper function for user initials

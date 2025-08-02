@@ -51,7 +51,7 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const fetchingData = useRef(false)
 
   // Check if user is admin
-  const isAdmin = profile?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
 
   const fetchData = useCallback(async () => {
     if (fetchingData.current) return // Prevent duplicate calls

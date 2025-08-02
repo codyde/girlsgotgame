@@ -9,6 +9,7 @@ export interface User {
   role: 'parent' | 'player'
   isOnboarded: boolean
   isVerified: boolean
+  isAdmin: boolean
   jerseyNumber: number | null
   createdAt: string
   updatedAt: string

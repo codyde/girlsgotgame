@@ -121,7 +121,8 @@ const generateVideoThumbnail = async (videoPath: string, outputPath: string): Pr
 router.get('/', requireAuth, async (req, res) => {
   try {
     const { type, tags, includeHidden } = req.query;
-    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    // Check if user is admin
+    const isAdmin = req.user?.isAdmin === true;
 
     let query = db
       .select({
@@ -323,7 +324,7 @@ router.delete('/:id', requireAuth, async (req: any, res) => {
     }
 
     // Check permissions: user owns the media OR user is admin
-    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    const isAdmin = req.user?.isAdmin === true;
     const isOwner = mediaItem.uploadedBy === req.user?.id;
 
     if (!isOwner && !isAdmin) {
