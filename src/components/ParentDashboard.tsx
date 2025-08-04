@@ -3,18 +3,15 @@ import { motion } from 'framer-motion'
 import { User as UserIcon, Trophy, Calendar, Target, Clock, Award, Shield, MapPin, Star, ChevronDown, ChevronUp } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { User, Workout, GameWithUserStats } from '../types'
+import { User, GameWithUserStats } from '../types'
 import toast from 'react-hot-toast'
 
-interface WorkoutWithUser extends Workout {
-  user?: User
-}
 
 export function ParentDashboard() {
   const { user, profile, updateProfile } = useAuth()
   const [children, setChildren] = useState<User[]>([])
-  const [childWorkouts, setChildWorkouts] = useState<WorkoutWithUser[]>([])
   const [childGames, setChildGames] = useState<GameWithUserStats[]>([])
+  const [selectedChildProfile, setSelectedChildProfile] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [selectedChild, setSelectedChild] = useState<string>('')
   const [expandedGameStats, setExpandedGameStats] = useState<Set<string>>(new Set())
@@ -54,17 +51,17 @@ export function ParentDashboard() {
 
   const fetchChildData = async (childId: string) => {
     try {
-      // Fetch workouts and games in parallel
-      const [workoutsResponse, gamesResponse] = await Promise.all([
-        api.getWorkoutsByUserId(childId, 20, 0),
-        api.getUserGames(childId)
+      // Fetch games and profile data
+      const [gamesResponse, profileResponse] = await Promise.all([
+        api.getUserGames(childId),
+        api.getProfileById(childId)
       ])
 
-      if (workoutsResponse.error) throw new Error(workoutsResponse.error)
       if (gamesResponse.error) throw new Error(gamesResponse.error)
+      if (profileResponse.error) throw new Error(profileResponse.error)
       
-      setChildWorkouts(workoutsResponse.data || [])
       setChildGames(gamesResponse.data || [])
+      setSelectedChildProfile(profileResponse.data)
     } catch (error: unknown) {
       toast.error('Error loading child data: ' + (error instanceof Error ? error.message : String(error)))
     }
@@ -99,6 +96,11 @@ export function ParentDashboard() {
   }
 
   const calculateGameStats = (stats: GameWithUserStats['stats']) => {
+    // Handle cases where stats might be undefined or null
+    if (!stats || !Array.isArray(stats)) {
+      return { points: 0, steals: 0, rebounds: 0 }
+    }
+    
     const points = stats
       .filter(s => ['2pt', '3pt', '1pt'].includes(s.statType))
       .reduce((sum, s) => sum + (s.statType === '3pt' ? 3 : s.statType === '2pt' ? 2 : 1), 0)
@@ -120,7 +122,12 @@ export function ParentDashboard() {
     })
   }
 
-  const selectedChildProfile = isPlayer ? profile : children.find(p => p.id === selectedChild)
+  // For players viewing their own dashboard, set their profile when component mounts
+  useEffect(() => {
+    if (isPlayer && profile && !selectedChildProfile) {
+      setSelectedChildProfile(profile)
+    }
+  }, [isPlayer, profile, selectedChildProfile])
 
   if (loading) {
     return (
@@ -136,18 +143,16 @@ export function ParentDashboard() {
   return (
     <div className="h-full flex flex-col">
       {/* Fixed Header */}
-      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-        <div className="max-w-4xl lg:mx-auto">
-          <div className="flex items-center gap-3 mb-2">
-            <Shield className="w-8 h-8 text-primary-600" />
-            <h1 className="text-3xl lg:text-4xl font-bold font-heading text-text-primary">
-              {isParent ? 'Parent Dashboard' : 'My Stats'}
-            </h1>
-          </div>
-          <p className="text-text-secondary font-body">
-            {isParent ? 'Track your child\'s basketball progress' : 'View your basketball progress and game stats'}
-          </p>
+      <div className="bg-bg-primary border-b border-border-primary p-3 lg:p-6 flex-shrink-0 z-40">
+        <div className="flex items-center gap-2">
+          <Shield className="w-6 h-6 lg:w-8 lg:h-8 text-primary-600" />
+          <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">
+            {isParent ? 'Parent Dashboard' : 'My Stats'}
+          </h1>
         </div>
+        <p className="font-body text-text-secondary hidden lg:block">
+          {isParent ? 'Track your child\'s basketball progress' : 'View your basketball progress and game stats'}
+        </p>
       </div>
 
       {/* Scrollable Content */}
@@ -182,7 +187,7 @@ export function ParentDashboard() {
                   <option value="">Select a child...</option>
                   {children.map((child) => (
                     <option key={child.id} value={child.id}>
-                      {child.name || child.email.split('@')[0]} ({child.totalPoints || 0} points)
+                      {child.name || child.email.split('@')[0]}
                     </option>
                   ))}
                 </select>
@@ -206,7 +211,7 @@ export function ParentDashboard() {
                     <p className="font-semibold font-body text-green-800">
                       Currently viewing: {selectedChildProfile.name || selectedChildProfile.email.split('@')[0]}
                     </p>
-                    <p className="text-sm font-body text-green-600">{selectedChildProfile.totalPoints || 0} total points</p>
+                    <p className="text-sm font-body text-green-600">{(childGames || []).length} games played</p>
                   </div>
                 </div>
               )}
@@ -218,28 +223,28 @@ export function ParentDashboard() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
               <div className="flex items-center gap-3">
-                <Trophy className="w-8 h-8 text-primary-500" />
-                <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{selectedChildProfile.totalPoints || 0}</div>
-                  <div className="text-sm font-body text-gray-600">Total Points</div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-center gap-3">
-                <Target className="w-8 h-8 text-green-500" />
-                <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{childWorkouts.length}</div>
-                  <div className="text-sm font-body text-gray-600">Total Workouts</div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-              <div className="flex items-center gap-3">
                 <Calendar className="w-8 h-8 text-blue-500" />
                 <div>
-                  <div className="text-2xl font-bold font-body text-gray-900">{childGames.length}</div>
+                  <div className="text-2xl font-bold font-body text-gray-900">{(childGames || []).length}</div>
                   <div className="text-sm font-body text-gray-600">Games Played</div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
+              <div className="flex items-center gap-3">
+                <Trophy className="w-8 h-8 text-yellow-500" />
+                <div>
+                  <div className="text-2xl font-bold font-body text-gray-900">
+                    {(childGames || []).filter(game => {
+                      const isCompleted = game.homeScore !== null && game.awayScore !== null
+                      if (!isCompleted) return false
+                      const isHomeGame = game.isHome
+                      const ourScore = isHomeGame ? game.homeScore : game.awayScore
+                      const opponentScore = isHomeGame ? game.awayScore : game.homeScore
+                      return ourScore > opponentScore
+                    }).length}
+                  </div>
+                  <div className="text-sm font-body text-gray-600">Games Won</div>
                 </div>
               </div>
             </div>
@@ -248,7 +253,7 @@ export function ParentDashboard() {
                 <Award className="w-8 h-8 text-orange-500" />
                 <div>
                   <div className="text-2xl font-bold font-body text-gray-900">
-                    {childGames.reduce((total, game) => {
+                    {(childGames || []).reduce((total, game) => {
                       return total + calculateGameStats(game.stats).points
                     }, 0)}
                   </div>
@@ -269,14 +274,14 @@ export function ParentDashboard() {
               </h3>
             </div>
             
-            {childGames.length === 0 ? (
+            {(childGames || []).length === 0 ? (
               <div className="p-8 text-center">
                 <Calendar className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                 <p className="font-body text-gray-500">No games played yet</p>
               </div>
             ) : (
               <div className="p-4 space-y-4">
-                {childGames.slice(0, 5).map((game, index) => {
+                {(childGames || []).slice(0, 5).map((game, index) => {
                   const isHomeGame = game.isHome
                   const homeTeamName = isHomeGame ? game.teamName : game.opponentTeam
                   const awayTeamName = isHomeGame ? game.opponentTeam : game.teamName
@@ -381,7 +386,7 @@ export function ParentDashboard() {
                               {selectedChildProfile?.name || 'Player'}'s Stats
                             </h4>
                             <span className="text-xs text-gray-500 font-body">
-                              {game.stats.length} stat{game.stats.length !== 1 ? 's' : ''}
+                              {(game.stats || []).length} stat{(game.stats || []).length !== 1 ? 's' : ''}
                             </span>
                           </div>
                           
@@ -410,11 +415,11 @@ export function ParentDashboard() {
                         {/* Detailed Stats - Expandable */}
                         {isExpanded && (
                           <div className="border-t border-gray-100 p-4">
-                            {game.stats.length === 0 ? (
+                            {(game.stats || []).length === 0 ? (
                               <p className="text-sm text-gray-500 font-body italic">No stats recorded</p>
                             ) : (
                               <div className="space-y-1">
-                                {game.stats.map((stat) => (
+                                {(game.stats || []).map((stat) => (
                                   <div key={stat.id} className="flex items-center justify-between text-sm">
                                     <span className="text-gray-600 font-body">
                                       {stat.statType.toUpperCase()} 
@@ -439,69 +444,6 @@ export function ParentDashboard() {
           </div>
         )}
 
-        {/* Recent Training Sessions */}
-        {selectedChild && (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-semibold font-heading text-gray-900 flex items-center gap-2">
-                <Award className="w-5 h-5 text-purple-500" />
-                Recent Training Sessions
-              </h3>
-            </div>
-            
-            {childWorkouts.length === 0 ? (
-              <div className="p-8 text-center">
-                <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <p className="font-body text-gray-500">No workouts recorded yet</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {childWorkouts.map((workout, index) => (
-                  <motion.div
-                    key={workout.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                    className="p-4"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                          {workout.exercise_type === 'dribbling' && '⚡'}
-                          {workout.exercise_type === 'shooting' && '🎯'}
-                          {workout.exercise_type === 'conditioning' && '💪'}
-                        </div>
-                        
-                        <div>
-                          <div className="flex items-center gap-2 mb-1 font-body">
-                            <span className="font-semibold font-body text-gray-900 capitalize">
-                              {workout.exercise_type}
-                            </span>
-                            <span className="text-sm font-body text-gray-500">•</span>
-                            <span className="text-sm font-body text-gray-500">{formatTime(workout.created_at)}</span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm font-body text-gray-600">
-                            <div className="flex items-center gap-1">
-                              <Clock className="w-4 h-4" />
-                              <span className="font-body">{workout.duration_minutes} min</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Trophy className="w-4 h-4 text-primary-500" />
-                              <span className="text-primary-600 font-semibold font-body">+{workout.points_earned} pts</span>
-                            </div>
-                          </div>
-                          {workout.notes && (
-                            <p className="text-sm font-body text-gray-500 mt-1 italic">"{workout.notes}"</p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
         </div>
       </div>
     </div>

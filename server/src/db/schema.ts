@@ -19,6 +19,7 @@ export const user = pgTable('user', {
   isOnboarded: boolean('is_onboarded').default(false).notNull(),
   isVerified: boolean('isverified').default(false).notNull(),
   jerseyNumber: integer('jersey_number'),
+  createdBy: varchar('created_by', { length: 20 }).default('oauth').notNull(), // 'oauth' | 'manual' - how user was created
 });
 
 export const session = pgTable('session', {

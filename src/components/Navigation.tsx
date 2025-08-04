@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Home, Trophy, Users, User as UserIcon, LogOut, MessageCircle, Menu, X, UserPlus, Calendar, Image, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
+import { Home, Users, User as UserIcon, LogOut, Menu, X, UserPlus, Calendar, Image, ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { Shield } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import logo from '../assets/logo.png'
@@ -18,7 +18,7 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
   const { signOut, user, profile } = useAuth()
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
 
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
   const isParent = profile?.role === 'parent'
   const isPlayer = profile?.role === 'player'
   const isVerified = profile?.isVerified === true
@@ -34,11 +34,8 @@ export function Navigation({ currentTab, setCurrentTab, isCollapsed = false, mob
   // For unverified users, show feed and profile tabs only
   const tabs = isVerified ? [
     { id: 'feed', label: 'Feed', icon: Home },
-    { id: 'training', label: 'Training', icon: Trophy },
-    { id: 'games', label: 'Games', icon: Calendar },
-    { id: 'chat', label: 'Chat', icon: MessageCircle },
-    { id: 'team', label: 'Team', icon: Users },
     { id: 'media', label: 'Media', icon: Image },
+    { id: 'games', label: 'Games', icon: Calendar },
     { id: 'profile', label: 'Profile', icon: UserIcon },
   ] : [
     { id: 'feed', label: 'Feed', icon: Home },

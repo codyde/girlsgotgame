@@ -13,6 +13,19 @@ export function GameCard({ game, commentCount = 0, onClick }: GameCardProps) {
   const homeTeamName = isHomeGame ? game.teamName : game.opponentTeam
   const awayTeamName = isHomeGame ? game.opponentTeam : game.teamName
   const isCompleted = game.homeScore !== null && game.awayScore !== null
+  
+  // Determine winner and if our team won
+  const getWinner = () => {
+    if (!isCompleted) return null
+    const homeScore = game.homeScore!
+    const awayScore = game.awayScore!
+    if (homeScore > awayScore) return 'home'
+    if (awayScore > homeScore) return 'away'
+    return 'tie'
+  }
+  
+  const winner = getWinner()
+  const ourTeamWon = (winner === 'home' && isHomeGame) || (winner === 'away' && !isHomeGame)
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString)
@@ -62,7 +75,13 @@ export function GameCard({ game, commentCount = 0, onClick }: GameCardProps) {
               {homeTeamName}
             </div>
             {isCompleted && (
-              <div className="text-2xl font-bold text-primary-600">
+              <div className={`text-2xl font-bold ${
+                winner === 'home' 
+                  ? (isHomeGame ? 'text-green-600' : 'text-red-600')
+                  : winner === 'away'
+                  ? (isHomeGame ? 'text-red-600' : 'text-green-600')
+                  : 'text-gray-600'
+              }`}>
                 {game.homeScore}
               </div>
             )}
@@ -82,7 +101,13 @@ export function GameCard({ game, commentCount = 0, onClick }: GameCardProps) {
               {awayTeamName}
             </div>
             {isCompleted && (
-              <div className="text-2xl font-bold text-primary-600">
+              <div className={`text-2xl font-bold ${
+                winner === 'away' 
+                  ? (!isHomeGame ? 'text-green-600' : 'text-red-600')
+                  : winner === 'home'
+                  ? (!isHomeGame ? 'text-red-600' : 'text-green-600')
+                  : 'text-gray-600'
+              }`}>
                 {game.awayScore}
               </div>
             )}

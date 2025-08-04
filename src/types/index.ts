@@ -7,9 +7,11 @@ export interface User {
   avatarUrl: string | null
   totalPoints: number
   role: 'parent' | 'player'
+  isAdmin: boolean
   isOnboarded: boolean
   isVerified: boolean
   jerseyNumber: number | null
+  createdBy?: 'oauth' | 'manual'
   createdAt: string
   updatedAt: string
 }
@@ -17,15 +19,6 @@ export interface User {
 // Keep Profile as alias for backwards compatibility during migration
 export type Profile = User
 
-export interface Workout {
-  id: string
-  user_id: string
-  exercise_type: 'dribbling' | 'shooting' | 'conditioning'
-  points_earned: number
-  duration_minutes: number
-  notes: string | null
-  created_at: string
-}
 
 export interface Post {
   id: string
@@ -33,23 +26,14 @@ export interface Post {
   content: string | null
   image_url: string | null
   media_id: string | null
-  workout_id: string | null
   game_id: string | null
-  post_type: 'text' | 'workout' | 'game'
+  post_type: 'text' | 'game'
   created_at: string
   user?: User
-  workouts?: Workout
   media?: MediaUpload
   game?: Game
 }
 
-export interface ExerciseTemplate {
-  name: string
-  type: 'dribbling' | 'shooting' | 'conditioning'
-  description: string
-  basePoints: number
-  icon: string
-}
 
 export interface Team {
   id: string
@@ -60,34 +44,6 @@ export interface Team {
   role?: 'admin' | 'member'
 }
 
-export interface ChatMessage {
-  id: string
-  senderId: string
-  senderName: string
-  senderAvatar: string | null
-  teamId?: string | null
-  recipientId?: string | null
-  content: string
-  messageType: 'text' | 'image' | 'system'
-  createdAt: string
-}
-
-export interface DMUser {
-  id: string
-  name: string
-  email: string
-  avatarUrl: string | null
-}
-
-export interface DMConversation {
-  id: string
-  name: string
-  email: string
-  avatarUrl: string | null
-  lastMessageContent: string
-  lastMessageSenderName: string
-  lastMessageTime: string
-}
 
 export interface TeamMember {
   id: string

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Heart, MessageCircle, Share, Plus, Trophy, Clock, Camera, X, Send, Home, RefreshCw, ZoomIn, MoreVertical, Trash2, Flag } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { useSocket } from '../hooks/useSocket'
+import { useSocket } from '../contexts/SocketContext'
 import { Post } from '../types'
 import toast from 'react-hot-toast'
 import { uploadMedia, validateFileSize } from '../lib/upload'
@@ -136,7 +136,7 @@ interface FeedScreenProps {
 export function FeedScreen({ onGameClick, onNavigate, showNewPost: externalShowNewPost, setShowNewPost: externalSetShowNewPost }: FeedScreenProps = {}) {
   const { user, profile } = useAuth()
   const { socket, isConnected } = useSocket()
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
   const [posts, setPosts] = useState<Post[]>([])
   const [newPost, setNewPost] = useState('')
   const [selectedFile, setSelectedFile] = useState<File | null>(null)
@@ -755,20 +755,11 @@ export function FeedScreen({ onGameClick, onNavigate, showNewPost: externalShowN
 
   if (loading) {
     return (
-      <div className="p-4 space-y-4">
-        {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white rounded-xl p-4 animate-pulse">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 bg-gray-200 rounded-full"></div>
-              <div className="flex-1">
-                <div className="h-4 bg-gray-200 rounded w-24 mb-1"></div>
-                <div className="h-3 bg-gray-200 rounded w-16"></div>
-              </div>
-            </div>
-            <div className="h-4 bg-gray-200 rounded mb-2"></div>
-            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-          </div>
-        ))}
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
+          <p className="font-body text-gray-600">Loading feed...</p>
+        </div>
       </div>
     )
   }

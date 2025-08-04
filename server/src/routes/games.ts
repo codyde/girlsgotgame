@@ -9,8 +9,8 @@ import gamesAdminRouter from './games-admin';
 
 // Import remaining legacy routes that haven't been modularized yet
 import { db } from '../db/index';
-import { games, gamePlayers, manualPlayers, parentChildRelations, gameActivities } from '../db/schema';
-import { eq, asc, or } from 'drizzle-orm';
+import { games, gamePlayers, manualPlayers, parentChildRelations, gameActivities, gameStats } from '../db/schema';
+import { eq, asc, or, and } from 'drizzle-orm';
 import { requireAuth } from '../middleware/auth';
 import { getChildUserIds, checkGamePermission, createErrorResponse } from './games-utils';
 
@@ -61,15 +61,33 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
     const { userId } = req.params;
     const user = req.user!;
 
-    // Permission check: only admins or the user themselves can view
-    if (!user.isAdmin && user.id !== userId) {
+    // Permission check: admins, the user themselves, or their parents can view
+    let hasPermission = user.isAdmin || user.id === userId;
+    
+    // If not admin or self, check if requesting user is a parent of this child
+    if (!hasPermission && user.role === 'parent') {
+      const parentChildRelationship = await db
+        .select()
+        .from(parentChildRelations)
+        .where(
+          and(
+            eq(parentChildRelations.parentId, user.id),
+            eq(parentChildRelations.childId, userId)
+          )
+        )
+        .limit(1);
+      
+      hasPermission = parentChildRelationship.length > 0;
+    }
+    
+    if (!hasPermission) {
       return res.status(403).json(createErrorResponse('You do not have permission to view this user\'s games', 403));
     }
 
     // Get games where the user participated (either directly or via linked manual players)
-    const userGames = await db
+    const userGamesData = await db
       .select({
-        id: games.id,
+        gameId: games.id,
         teamName: games.teamName,
         isHome: games.isHome,
         opponentTeam: games.opponentTeam,
@@ -81,6 +99,11 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
         isSharedToFeed: games.isSharedToFeed,
         createdAt: games.createdAt,
         updatedAt: games.updatedAt,
+        // Game player info
+        gamePlayerId: gamePlayers.id,
+        jerseyNumber: gamePlayers.jerseyNumber,
+        isStarter: gamePlayers.isStarter,
+        minutesPlayed: gamePlayers.minutesPlayed,
       })
       .from(games)
       .innerJoin(gamePlayers, eq(games.id, gamePlayers.gameId))
@@ -91,23 +114,52 @@ router.get('/user/:userId', requireAuth, async (req, res) => {
           eq(manualPlayers.linkedUserId, userId)
         )
       )
-      .groupBy(
-        games.id,
-        games.teamName,
-        games.isHome,
-        games.opponentTeam,
-        games.gameDate,
-        games.homeScore,
-        games.awayScore,
-        games.notes,
-        games.status,
-        games.isSharedToFeed,
-        games.createdAt,
-        games.updatedAt
-      )
       .orderBy(asc(games.gameDate));
 
-    res.json(userGames);
+    // Get stats for each game
+    const gamesWithStats = await Promise.all(userGamesData.map(async (game) => {
+      const stats = await db
+        .select({
+          id: gameStats.id,
+          gameId: gameStats.gameId,
+          gamePlayerId: gameStats.gamePlayerId,
+          statType: gameStats.statType,
+          value: gameStats.value,
+          quarter: gameStats.quarter,
+          timeMinute: gameStats.timeMinute,
+          createdAt: gameStats.createdAt,
+          createdBy: gameStats.createdBy,
+        })
+        .from(gameStats)
+        .where(
+          and(
+            eq(gameStats.gameId, game.gameId),
+            eq(gameStats.gamePlayerId, game.gamePlayerId)
+          )
+        )
+        .orderBy(asc(gameStats.createdAt));
+
+      return {
+        id: game.gameId,
+        teamName: game.teamName,
+        isHome: game.isHome,
+        opponentTeam: game.opponentTeam,
+        gameDate: game.gameDate,
+        homeScore: game.homeScore,
+        awayScore: game.awayScore,
+        notes: game.notes,
+        status: game.status,
+        isSharedToFeed: game.isSharedToFeed,
+        createdAt: game.createdAt,
+        updatedAt: game.updatedAt,
+        gamePlayerId: game.gamePlayerId,
+        jerseyNumber: game.jerseyNumber,
+        isStarter: game.isStarter,
+        stats: stats,
+      };
+    }));
+
+    res.json(gamesWithStats);
   } catch (error) {
     console.error('Error fetching user games:', error);
     res.status(500).json(createErrorResponse('Failed to fetch user games'));

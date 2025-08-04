@@ -9,6 +9,7 @@ import { db } from '../db/index';
 import { mediaUploads } from '../db/schema';
 import sharp from 'sharp';
 import ffmpeg from 'fluent-ffmpeg';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = Router();
 
@@ -50,24 +51,7 @@ const generateFileName = (originalName: string): string => {
   return `${name}-${timestamp}-${uniqueId}${ext}`;
 };
 
-// Authentication middleware
-const requireAuth = async (req: any, res: any, next: any) => {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers as any,
-    });
-
-    if (!session?.user) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    req.user = session.user;
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
-  }
-};
+// Note: Using common auth middleware imported above - no custom auth needed
 
 // Helper function to get image dimensions
 const getImageDimensions = async (buffer: Buffer): Promise<{ width: number; height: number }> => {
@@ -210,7 +194,7 @@ router.post('/avatar', upload.single('file'), async (req, res) => {
 });
 
 // Upload media for feed posts
-router.post('/media', requireAuth, upload.single('file'), async (req: any, res) => {
+router.post('/media', requireAuth, upload.single('file'), async (req: AuthenticatedRequest, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });

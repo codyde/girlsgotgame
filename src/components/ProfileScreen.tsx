@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react'
 import { Edit2, Camera, Award, Calendar, Target, Users, User as UserIcon, Palette } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { useTheme } from '../contexts/ThemeContext'
+import { api } from '../lib/api'
+import { GameWithUserStats } from '../types'
 import toast from 'react-hot-toast'
 import { uploadAvatar, validateFileSize } from '../lib/upload'
 
@@ -10,7 +12,7 @@ export function ProfileScreen() {
   const { currentTheme, setTheme, themes } = useTheme()
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState('')
-
+  const [userGames, setUserGames] = useState<GameWithUserStats[]>([])
   const [isUploading, setIsUploading] = useState(false)
 
   // Update state when profile changes
@@ -19,6 +21,24 @@ export function ProfileScreen() {
       setName(profile.name || '')
     }
   }, [profile])
+
+  // Fetch user games
+  useEffect(() => {
+    if (user?.id) {
+      fetchUserGames()
+    }
+  }, [user?.id])
+
+  const fetchUserGames = async () => {
+    try {
+      if (!user?.id) return
+      const { data, error } = await api.getUserGames(user.id)
+      if (error) throw new Error(error)
+      setUserGames(data || [])
+    } catch (error) {
+      console.error('Error fetching user games:', error)
+    }
+  }
 
 
   const handleSave = async () => {
@@ -88,20 +108,18 @@ export function ProfileScreen() {
   return (
     <div className="h-full flex flex-col">
       {/* Fixed Header */}
-      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-        <div className="max-w-4xl lg:mx-auto">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <UserIcon className="w-8 h-8 text-primary-600" />
-              <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">My Profile</h1>
-            </div>
-            <button
-              onClick={() => setIsEditing(!isEditing)}
-              className="p-2 bg-bg-tertiary text-text-secondary rounded-full hover:bg-secondary-100 transition-colors"
-            >
-              <Edit2 className="w-5 h-5" />
-            </button>
+      <div className="bg-bg-primary border-b border-border-primary p-3 lg:p-6 flex-shrink-0 z-40">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <UserIcon className="w-6 h-6 lg:w-8 lg:h-8 text-primary-600" />
+            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">My Profile</h1>
           </div>
+          <button
+            onClick={() => setIsEditing(!isEditing)}
+            className="bg-bg-tertiary text-text-secondary p-2 lg:p-3 rounded-full hover:bg-secondary-100 transition-all"
+          >
+            <Edit2 className="w-4 h-4 lg:w-5 lg:h-5" />
+          </button>
         </div>
       </div>
 
@@ -198,15 +216,24 @@ export function ProfileScreen() {
 
           {/* Stats grid */}
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-orange-50 rounded-xl p-4 text-center">
-              <Award className="w-6 h-6 text-orange-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold font-body text-orange-600">{profile.totalPoints || 0}</div>
-              <div className="text-sm font-body text-orange-700">Total Points</div>
+            <div className="bg-blue-50 rounded-xl p-4 text-center">
+              <Calendar className="w-6 h-6 text-blue-600 mx-auto mb-2" />
+              <div className="text-2xl font-bold font-body text-blue-600">{userGames.length}</div>
+              <div className="text-sm font-body text-blue-700">Games Played</div>
             </div>
             <div className="bg-green-50 rounded-xl p-4 text-center">
               <Target className="w-6 h-6 text-green-600 mx-auto mb-2" />
-              <div className="text-2xl font-bold font-body text-green-600">0</div>
-              <div className="text-sm font-body text-green-700">This Week</div>
+              <div className="text-2xl font-bold font-body text-green-600">
+                {userGames.filter(game => {
+                  const isCompleted = game.homeScore !== null && game.awayScore !== null
+                  if (!isCompleted) return false
+                  const isHomeGame = game.isHome
+                  const ourScore = isHomeGame ? game.homeScore : game.awayScore
+                  const opponentScore = isHomeGame ? game.awayScore : game.homeScore
+                  return ourScore > opponentScore
+                }).length}
+              </div>
+              <div className="text-sm font-body text-green-700">Games Won</div>
             </div>
           </div>
 

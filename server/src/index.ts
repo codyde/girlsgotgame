@@ -19,7 +19,6 @@ import authRoutes from './routes/auth';
 import mobileAuthRoutes from './routes/mobile-auth';
 import adminRoutes from './routes/admin';
 import profileRoutes from './routes/profiles';
-import workoutRoutes from './routes/workouts';
 import postRoutes from './routes/posts';
 import uploadRoutes from './routes/upload';
 import chatRoutes from './routes/chat';
@@ -30,8 +29,6 @@ import reportsRoutes from './routes/reports';
 import { auth } from './config/auth';
 import { toNodeHandler } from 'better-auth/node';
 import { db } from './db/index';
-import { chatMessages, user, teamMembers, session } from './db/schema';
-import { eq, and } from 'drizzle-orm';
 // UploadThing removed - using Cloudflare R2 instead
 
 // Load environment variables from the server directory
@@ -139,162 +136,7 @@ app.get('/api/auth/error', (req, res) => {
 
 // Mobile endpoint will be preserved and mounted inside initializeServer()
 
-// Socket.IO authentication middleware
-io.use(async (socket: Socket, next: (err?: Error) => void) => {
-  try {
-    // Get session from cookies
-    const sessionData = await auth.api.getSession({
-      headers: socket.handshake.headers,
-    });
-
-    if (!sessionData?.user) {
-      return next(new Error('Authentication required'));
-    }
-
-    // Attach user data to socket
-    socket.data.user = sessionData.user;
-    next();
-  } catch (error) {
-    console.error('Socket auth error:', error);
-    next(new Error('Authentication failed'));
-  }
-});
-
-// Socket.IO connection handling
-io.on('connection', (socket: Socket) => {
-  const user = socket.data.user;
-
-  // Join user to their personal room for DMs
-  socket.join(`user_${user.id}`);
-  
-  // Join user to their team rooms
-  // TODO: Load user's team memberships and join those rooms
-  
-  // Handle joining a team room
-  socket.on('join_team', (teamId: string) => {
-    // TODO: Verify user is member of this team
-    socket.join(`team_${teamId}`);
-  });
-
-  // Handle leaving a team room
-  socket.on('leave_team', (teamId: string) => {
-    socket.leave(`team_${teamId}`);
-  });
-
-  // Handle team message
-  socket.on('team_message', async (data: { teamId: string; content: string }) => {
-    try {
-      // Verify user is a member of this team
-      const membership = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, data.teamId), eq(teamMembers.userId, user.id)))
-        .limit(1);
-
-      if (membership.length === 0) {
-        socket.emit('error', { message: 'Not a member of this team' });
-        return;
-      }
-
-      // Save message to database
-      const [newMessage] = await db
-        .insert(chatMessages)
-        .values({
-          senderId: user.id,
-          teamId: data.teamId,
-          recipientId: null,
-          content: data.content,
-          messageType: 'text',
-        })
-        .returning();
-
-      const messageWithSender = {
-        id: newMessage.id,
-        senderId: user.id,
-        senderName: user.name,
-        teamId: data.teamId,
-        content: data.content,
-        messageType: 'text',
-        createdAt: newMessage.createdAt.toISOString(),
-      };
-      
-      // Broadcast to team room
-      io.to(`team_${data.teamId}`).emit('team_message', messageWithSender);
-    } catch (error) {
-      console.error('Error saving team message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
-    }
-  });
-
-  // Handle direct message
-  socket.on('direct_message', async (data: { recipientId: string; content: string }) => {
-    try {
-      
-      // Validate recipientId
-      if (!data.recipientId || typeof data.recipientId !== 'string' || data.recipientId.trim() === '') {
-        socket.emit('error', { message: 'Invalid recipient ID' });
-        return;
-      }
-
-      // Basic validation - just check if recipientId looks like a valid user ID format
-      if (data.recipientId.trim().length < 10) {
-        socket.emit('error', { message: 'Invalid recipient ID format' });
-        return;
-      }
-
-      // Save message to database
-      const [newMessage] = await db
-        .insert(chatMessages)
-        .values({
-          senderId: user.id,
-          teamId: null,
-          recipientId: data.recipientId.trim(),
-          content: data.content,
-          messageType: 'text',
-        })
-        .returning();
-
-      const messageWithSender = {
-        id: newMessage.id,
-        senderId: user.id,
-        senderName: user.name,
-        recipientId: data.recipientId,
-        content: data.content,
-        messageType: 'text',
-        createdAt: newMessage.createdAt.toISOString(),
-      };
-      
-      // Send to recipient and sender
-      io.to(`user_${data.recipientId}`).emit('direct_message', messageWithSender);
-      io.to(`user_${user.id}`).emit('direct_message', messageWithSender);
-    } catch (error) {
-      console.error('Error saving direct message:', error);
-      socket.emit('error', { message: 'Failed to send message' });
-    }
-  });
-
-  // Handle typing indicators
-  socket.on('typing_start', (data: { teamId?: string; recipientId?: string }) => {
-    if (data.teamId) {
-      socket.to(`team_${data.teamId}`).emit('user_typing', { userId: user.id, userName: user.name, teamId: data.teamId });
-    } else if (data.recipientId) {
-      socket.to(`user_${data.recipientId}`).emit('user_typing', { userId: user.id, userName: user.name, recipientId: data.recipientId });
-    }
-  });
-
-  socket.on('typing_stop', (data: { teamId?: string; recipientId?: string }) => {
-    if (data.teamId) {
-      socket.to(`team_${data.teamId}`).emit('user_stop_typing', { userId: user.id, teamId: data.teamId });
-    } else if (data.recipientId) {
-      socket.to(`user_${data.recipientId}`).emit('user_stop_typing', { userId: user.id, recipientId: data.recipientId });
-    }
-  });
-
-  // Handle disconnect
-  socket.on('disconnect', () => {
-    // User disconnected - no logging needed
-  });
-});
+// Socket.IO can be used for future real-time features
 
 // Initialize server
 const initializeServer = async () => {
@@ -326,7 +168,6 @@ const initializeServer = async () => {
   // API routes
   app.use('/api/admin', adminRoutes);
   app.use('/api/profiles', profileRoutes);
-  app.use('/api/workouts', workoutRoutes);
   app.use('/api/posts', postRoutes);
   app.use('/api/upload', uploadRoutes);
   app.use('/api/chat', chatRoutes);

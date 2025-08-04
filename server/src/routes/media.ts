@@ -10,6 +10,9 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs/promises';
 import { createReadStream } from 'fs';
+import { PutObjectCommand } from '@aws-sdk/client-s3';
+import { r2Client, R2_BUCKET_NAME, R2_PUBLIC_DOMAIN } from '../config/r2';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 
 const router = express.Router();
 
@@ -33,45 +36,58 @@ const upload = multer({
   },
 });
 
-// Authentication middleware
-const requireAuth = async (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers as any,
-    });
-
-    if (!session?.user) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    req.user = session.user;
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
-  }
-};
-
 // Admin check middleware
-const requireAdmin = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+const requireAdmin = (req: AuthenticatedRequest, res: express.Response, next: express.NextFunction) => {
   if (req.user?.email !== 'codydearkland@gmail.com') {
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();
 };
 
-// Helper function to save file (simulate cloud storage)
+// Helper function to save file to R2
 const saveFile = async (buffer: Buffer, filename: string): Promise<string> => {
-  // In production, this would upload to cloud storage (R2, S3, etc.)
-  // For now, save to local uploads directory
-  const uploadsDir = path.join(process.cwd(), 'uploads');
-  await fs.mkdir(uploadsDir, { recursive: true });
-  
-  const filePath = path.join(uploadsDir, filename);
-  await fs.writeFile(filePath, buffer);
-  
-  // Return URL - in production this would be the cloud storage URL
-  return `/uploads/${filename}`;
+  try {
+    // Upload to R2
+    const command = new PutObjectCommand({
+      Bucket: R2_BUCKET_NAME,
+      Key: `media/${filename}`,
+      Body: buffer,
+      ContentType: getContentType(filename),
+    });
+
+    await r2Client.send(command);
+
+    // Return R2 URL
+    return `https://${R2_PUBLIC_DOMAIN}/media/${filename}`;
+  } catch (error) {
+    console.error('Failed to upload to R2:', error);
+    // Fallback to local storage
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    await fs.mkdir(uploadsDir, { recursive: true });
+    
+    const filePath = path.join(uploadsDir, filename);
+    await fs.writeFile(filePath, buffer);
+    
+    return `/uploads/${filename}`;
+  }
+};
+
+// Helper function to get content type from filename
+const getContentType = (filename: string): string => {
+  const ext = path.extname(filename).toLowerCase();
+  const contentTypes: { [key: string]: string } = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.avi': 'video/x-msvideo',
+    '.webm': 'video/webm',
+    '.mkv': 'video/x-matroska',
+  };
+  return contentTypes[ext] || 'application/octet-stream';
 };
 
 // Helper function to get image dimensions
@@ -102,23 +118,58 @@ const getVideoMetadata = async (filePath: string): Promise<{ width?: number; hei
   });
 };
 
-// Helper function to generate video thumbnail
-const generateVideoThumbnail = async (videoPath: string, outputPath: string): Promise<void> => {
+// Helper function to generate video thumbnail and upload to R2
+const generateVideoThumbnail = async (videoPath: string, thumbnailFileName: string): Promise<string | null> => {
   return new Promise((resolve, reject) => {
-    ffmpeg(videoPath)
-      .screenshots({
-        timestamps: ['10%'],
-        filename: path.basename(outputPath),
-        folder: path.dirname(outputPath),
-        size: '320x240'
-      })
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err));
+    const tempDir = path.join(process.cwd(), 'temp');
+    const tempThumbnailPath = path.join(tempDir, thumbnailFileName);
+    
+    // Ensure temp directory exists
+    fs.mkdir(tempDir, { recursive: true }).then(() => {
+      ffmpeg(videoPath)
+        .screenshots({
+          timestamps: ['10%'],
+          filename: thumbnailFileName,
+          folder: tempDir,
+          size: '320x240'
+        })
+        .on('end', async () => {
+          try {
+            // Read the generated thumbnail
+            const thumbnailBuffer = await fs.readFile(tempThumbnailPath);
+            
+            // Upload thumbnail to R2
+            const command = new PutObjectCommand({
+              Bucket: R2_BUCKET_NAME,
+              Key: `media/thumbnails/${thumbnailFileName}`,
+              Body: thumbnailBuffer,
+              ContentType: 'image/jpeg',
+            });
+
+            await r2Client.send(command);
+
+            // Clean up temp file
+            await fs.unlink(tempThumbnailPath).catch(() => {});
+
+            // Return R2 URL
+            resolve(`https://${R2_PUBLIC_DOMAIN}/media/thumbnails/${thumbnailFileName}`);
+          } catch (error) {
+            console.error('Failed to upload thumbnail to R2:', error);
+            // Clean up temp file
+            await fs.unlink(tempThumbnailPath).catch(() => {});
+            resolve(null);
+          }
+        })
+        .on('error', (err) => {
+          console.error('Failed to generate thumbnail:', err);
+          reject(err);
+        });
+    }).catch(reject);
   });
 };
 
 // GET /api/media - Get all media items
-router.get('/', requireAuth, async (req, res) => {
+router.get('/', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { type, tags, includeHidden } = req.query;
     const isAdmin = req.user?.email === 'codydearkland@gmail.com';
@@ -185,8 +236,8 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/media/upload - Upload new media
-router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
+// POST /api/media/upload - Upload new media  
+const uploadHandler = async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -213,8 +264,11 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
       width = dimensions.width;
       height = dimensions.height;
     } else if (isVideo) {
-      // For videos, we need to save the file first to get metadata
-      const tempVideoPath = path.join(process.cwd(), 'uploads', fileName);
+      // For videos, we need to save the file temporarily to get metadata and generate thumbnail
+      const tempDir = path.join(process.cwd(), 'temp');
+      await fs.mkdir(tempDir, { recursive: true });
+      const tempVideoPath = path.join(tempDir, fileName);
+      await fs.writeFile(tempVideoPath, file.buffer);
       
       try {
         // Get video metadata
@@ -225,12 +279,19 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
 
         // Generate thumbnail
         const thumbnailFileName = `thumb_${fileId}.jpg`;
-        const thumbnailPath = path.join(process.cwd(), 'uploads', thumbnailFileName);
-        await generateVideoThumbnail(tempVideoPath, thumbnailPath);
-        thumbnailUrl = `/uploads/${thumbnailFileName}`;
+        try {
+          thumbnailUrl = await generateVideoThumbnail(tempVideoPath, thumbnailFileName);
+        } catch (thumbnailError) {
+          console.warn('Failed to generate video thumbnail:', thumbnailError);
+          // Set thumbnailUrl to null - the client will handle the fallback
+          thumbnailUrl = null;
+        }
       } catch (videoError) {
         console.warn('Failed to process video metadata/thumbnail:', videoError);
         // Continue without metadata/thumbnail
+      } finally {
+        // Clean up temporary video file
+        await fs.unlink(tempVideoPath).catch(() => {});
       }
     }
 
@@ -262,28 +323,58 @@ router.post('/upload', requireAuth, upload.single('file'), async (req, res) => {
     console.error('Error uploading media:', error);
     res.status(500).json({ error: 'Failed to upload file' });
   }
-});
+};
 
-// PATCH /api/media/:id - Update media item (admin only)
-router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+// Route handlers for upload (support both /upload and via main router as /api/upload/media)
+router.post('/upload', requireAuth, upload.single('file'), uploadHandler);
+
+// PATCH /api/media/:id - Update media item (owner or admin)
+router.patch('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
-    const { tags, description, isVisible } = req.body;
+    const { tags, description, isVisible, originalName } = req.body;
+
+    // Get the media item first to check ownership
+    const [mediaItem] = await db
+      .select()
+      .from(mediaUploads)
+      .where(eq(mediaUploads.id, id))
+      .limit(1);
+
+    if (!mediaItem) {
+      return res.status(404).json({ error: 'Media item not found' });
+    }
+
+    // Check permissions: user owns the media OR user is admin
+    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    const isOwner = mediaItem.uploadedBy === req.user?.id;
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ error: 'Not authorized to update this media' });
+    }
 
     const updateData: any = {
       updatedAt: new Date(),
     };
 
-    if (tags !== undefined) {
-      updateData.tags = JSON.stringify(Array.isArray(tags) ? tags : []);
+    // Only admins can update tags, description, and visibility
+    if (isAdmin) {
+      if (tags !== undefined) {
+        updateData.tags = JSON.stringify(Array.isArray(tags) ? tags : []);
+      }
+
+      if (description !== undefined) {
+        updateData.description = description;
+      }
+
+      if (isVisible !== undefined) {
+        updateData.isVisible = Boolean(isVisible);
+      }
     }
 
-    if (description !== undefined) {
-      updateData.description = description;
-    }
-
-    if (isVisible !== undefined) {
-      updateData.isVisible = Boolean(isVisible);
+    // Both owners and admins can update originalName
+    if (originalName !== undefined) {
+      updateData.originalName = originalName;
     }
 
     const [updatedMedia] = await db
@@ -307,7 +398,7 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/media/:id - Delete media item (owner or admin)
-router.delete('/:id', requireAuth, async (req: any, res) => {
+router.delete('/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     const { id } = req.params;
 
@@ -352,6 +443,54 @@ router.delete('/:id', requireAuth, async (req: any, res) => {
   } catch (error) {
     console.error('Error deleting media:', error);
     res.status(500).json({ error: 'Failed to delete media item' });
+  }
+});
+
+// Download media file with proper headers
+router.get('/download/:id', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { id } = req.params;
+
+    // Get the media item
+    const [mediaItem] = await db
+      .select()
+      .from(mediaUploads)
+      .where(eq(mediaUploads.id, id))
+      .limit(1);
+
+    if (!mediaItem) {
+      return res.status(404).json({ error: 'Media item not found' });
+    }
+
+    // Check if the media is visible or user has access
+    const isAdmin = req.user?.email === 'codydearkland@gmail.com';
+    const isOwner = mediaItem.uploadedBy === req.user?.id;
+
+    if (!mediaItem.isVisible && !isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // If it's an R2 URL, redirect to it
+    if (mediaItem.uploadUrl.startsWith('https://')) {
+      res.setHeader('Content-Disposition', `attachment; filename="${mediaItem.originalName}"`);
+      return res.redirect(mediaItem.uploadUrl);
+    }
+
+    // If it's a local file, serve it
+    const filePath = path.join(process.cwd(), 'uploads', mediaItem.fileName);
+    
+    res.setHeader('Content-Disposition', `attachment; filename="${mediaItem.originalName}"`);
+    res.setHeader('Content-Type', mediaItem.mimeType);
+    
+    res.sendFile(filePath, (err) => {
+      if (err) {
+        console.error('Error serving file:', err);
+        res.status(404).json({ error: 'File not found' });
+      }
+    });
+  } catch (error) {
+    console.error('Error downloading media:', error);
+    res.status(500).json({ error: 'Failed to download file' });
   }
 });
 

@@ -8,7 +8,7 @@ import {
   gameActivities, 
   parentChildRelations 
 } from '../db/schema';
-import { eq, asc, and, like } from 'drizzle-orm';
+import { eq, asc, and, like, or } from 'drizzle-orm';
 import { requireAuth, requireAdmin } from '../middleware/auth';
 import { checkGamePermission, logGameActivity, createErrorResponse } from './games-utils';
 
@@ -206,13 +206,15 @@ router.post('/:gameId/players', requireAuth, async (req, res) => {
 
     // Log activity
     const [targetUser] = await db
-      .select({ name: userTable.name })
+      .select({ name: userTable.name, email: userTable.email })
       .from(userTable)
       .where(eq(userTable.id, userId));
 
+    const playerDisplayName = targetUser?.name || targetUser?.email || 'Unknown User';
+
     await logGameActivity(gameId, {
       activityType: 'player_added',
-      description: `Added registered player ${targetUser[0]?.name || 'Unknown'} to the game`,
+      description: `Added registered player ${playerDisplayName} to the game`,
       metadata: { playerId: newGamePlayer.id, userId },
       performedBy: user.id,
     });
@@ -224,7 +226,7 @@ router.post('/:gameId/players', requireAuth, async (req, res) => {
   }
 });
 
-// Add manual player to game (admin only)
+// Add manual player to game (admin only) - Creates user in unified table
 router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
   try {
     const user = req.user!;
@@ -241,45 +243,61 @@ router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
       return res.status(400).json(createErrorResponse('Player name is required', 400));
     }
 
-    // Check if manual player with this name already exists
-    let manualPlayer = await db
+    // Create unique email for manual player
+    const cleanName = name.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+    const timestamp = Date.now();
+    const manualEmail = `${cleanName}.${timestamp}@manual.local`;
+
+    // Check if a user with this name already exists
+    let existingUser = await db
       .select()
-      .from(manualPlayers)
-      .where(eq(manualPlayers.name, name.trim()))
+      .from(userTable)
+      .where(eq(userTable.name, name.trim()))
       .limit(1);
 
-    // Create manual player if doesn't exist
-    if (manualPlayer.length === 0) {
-      const [newManualPlayer] = await db
-        .insert(manualPlayers)
+    let playerId;
+    
+    if (existingUser.length === 0) {
+      // Create new user in unified table
+      const [newUser] = await db
+        .insert(userTable)
         .values({
+          id: `manual_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
           name: name.trim(),
+          email: manualEmail,
+          emailVerified: false,
+          role: 'player',
+          isOnboarded: true,
+          isVerified: false,
           jerseyNumber: jerseyNumber || null,
-          notes: notes || null,
+          createdBy: 'manual',
         })
         .returning();
       
-      manualPlayer = [newManualPlayer];
+      playerId = newUser.id;
+    } else {
+      playerId = existingUser[0].id;
     }
 
-    // Check if this manual player is already added to this game
+    // Check if this player is already added to this game
     const [existingGamePlayer] = await db
       .select()
       .from(gamePlayers)
       .where(and(
         eq(gamePlayers.gameId, gameId),
-        eq(gamePlayers.manualPlayerId, manualPlayer[0].id)
+        eq(gamePlayers.userId, playerId)
       ));
 
     if (existingGamePlayer) {
-      return res.status(400).json(createErrorResponse('This manual player is already added to this game', 400));
+      return res.status(400).json(createErrorResponse('This player is already added to this game', 400));
     }
 
+    // Add player to game
     const [newGamePlayer] = await db
       .insert(gamePlayers)
       .values({
         gameId,
-        manualPlayerId: manualPlayer[0].id,
+        userId: playerId,
         jerseyNumber: jerseyNumber || null,
         isStarter: isStarter || false,
       })
@@ -289,13 +307,13 @@ router.post('/:gameId/manual-players', requireAuth, async (req, res) => {
     await logGameActivity(gameId, {
       activityType: 'player_added',
       description: `Added manual player ${name.trim()} to the game`,
-      metadata: { playerId: newGamePlayer.id, manualPlayerId: manualPlayer[0].id },
+      metadata: { playerId: newGamePlayer.id, userId: playerId },
       performedBy: user.id,
     });
 
     res.status(201).json({
       ...newGamePlayer,
-      manualPlayer: manualPlayer[0],
+      user: { id: playerId, name: name.trim(), email: manualEmail }
     });
   } catch (error) {
     console.error('Error adding manual player to game:', error);
@@ -324,6 +342,193 @@ router.get('/manual-players/search', async (req, res) => {
   } catch (error) {
     console.error('Error searching manual players:', error);
     res.status(500).json(createErrorResponse('Failed to search manual players'));
+  }
+});
+
+// Search all players in unified user table
+router.get('/players/search', requireAuth, async (req, res) => {
+  try {
+    const { q } = req.query;
+    
+    if (!q || typeof q !== 'string') {
+      return res.json([]);
+    }
+
+    const searchTerm = `%${q.trim()}%`;
+    
+    // Search all users (both OAuth and manual) in unified table
+    const allPlayers = await db
+      .select({
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+        jerseyNumber: userTable.jerseyNumber,
+        avatarUrl: userTable.avatarUrl,
+        createdBy: userTable.createdBy,
+        role: userTable.role,
+      })
+      .from(userTable)
+      .where(
+        and(
+          eq(userTable.role, 'player'),
+          or(
+            like(userTable.name, searchTerm),
+            like(userTable.email, searchTerm)
+          )
+        )
+      )
+      .orderBy(asc(userTable.name))
+      .limit(20);
+
+    res.json(allPlayers);
+  } catch (error) {
+    console.error('Error searching all players:', error);
+    res.status(500).json(createErrorResponse('Failed to search players'));
+  }
+});
+
+// Bulk add players to game (admin only)
+router.post('/:gameId/players/bulk', requireAuth, async (req, res) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.isAdmin;
+    
+    if (!isAdmin) {
+      return res.status(403).json(createErrorResponse('Admin access required', 403));
+    }
+
+    const { gameId } = req.params;
+    const { players } = req.body; // Array of { id: string, name?: string }
+
+    if (!Array.isArray(players) || players.length === 0) {
+      return res.status(400).json(createErrorResponse('Players array is required and must not be empty', 400));
+    }
+
+    const results = [];
+    const errors = [];
+
+    for (const player of players) {
+      try {
+        // Check if player is already added to this game
+        const [existingPlayer] = await db
+          .select()
+          .from(gamePlayers)
+          .where(and(
+            eq(gamePlayers.gameId, gameId),
+            eq(gamePlayers.userId, player.id)
+          ));
+
+        if (existingPlayer) {
+          errors.push(`${player.name || player.id} is already in this game`);
+          continue;
+        }
+
+        // Add player to game
+        const [newGamePlayer] = await db
+          .insert(gamePlayers)
+          .values({
+            gameId,
+            userId: player.id,
+            isStarter: false,
+          })
+          .returning();
+
+        // Get player name for activity log
+        const [targetUser] = await db
+          .select({ name: userTable.name, email: userTable.email, createdBy: userTable.createdBy })
+          .from(userTable)
+          .where(eq(userTable.id, player.id));
+
+        const playerDisplayName = targetUser?.name || targetUser?.email || 'Unknown User';
+        const playerType = targetUser?.createdBy === 'manual' ? 'manual' : 'registered';
+
+        // Log activity
+        await logGameActivity(gameId, {
+          activityType: 'player_added',
+          description: `Added ${playerType} player ${playerDisplayName} to the game`,
+          metadata: { playerId: newGamePlayer.id, userId: player.id },
+          performedBy: user.id,
+        });
+
+        results.push({ id: player.id, name: playerDisplayName, gamePlayerId: newGamePlayer.id, createdBy: playerType });
+      } catch (error) {
+        console.error(`Error adding player ${player.id}:`, error);
+        errors.push(`Failed to add ${player.name || player.id}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    res.status(200).json({
+      message: `Added ${results.length} players to the game`,
+      added: results,
+      errors: errors,
+      totalProcessed: players.length,
+      successCount: results.length,
+      errorCount: errors.length
+    });
+  } catch (error) {
+    console.error('Error bulk adding players to game:', error);
+    res.status(500).json(createErrorResponse('Failed to bulk add players to game'));
+  }
+});
+
+// Remove player from game (admin only)
+router.delete('/:gameId/players/:playerId', requireAuth, async (req, res) => {
+  try {
+    const user = req.user!;
+    const isAdmin = user.isAdmin;
+    
+    if (!isAdmin) {
+      return res.status(403).json(createErrorResponse('Admin access required', 403));
+    }
+
+    const { gameId, playerId } = req.params;
+
+    // Get player info before deletion for activity log
+    const [gamePlayer] = await db
+      .select({
+        id: gamePlayers.id,
+        userId: gamePlayers.userId,
+        manualPlayerId: gamePlayers.manualPlayerId,
+        userName: userTable.name,
+        userEmail: userTable.email,
+        manualPlayerName: manualPlayers.name,
+      })
+      .from(gamePlayers)
+      .leftJoin(userTable, eq(gamePlayers.userId, userTable.id))
+      .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+      .where(and(
+        eq(gamePlayers.gameId, gameId),
+        eq(gamePlayers.id, playerId)
+      ));
+
+    if (!gamePlayer) {
+      return res.status(404).json(createErrorResponse('Player not found in this game', 404));
+    }
+
+    // Delete the game player record
+    await db
+      .delete(gamePlayers)
+      .where(eq(gamePlayers.id, playerId));
+
+    // Determine player name for activity log
+    const playerDisplayName = gamePlayer.userName || gamePlayer.userEmail || gamePlayer.manualPlayerName || 'Unknown Player';
+
+    // Log activity
+    await logGameActivity(gameId, {
+      activityType: 'player_removed',
+      description: `Removed player ${playerDisplayName} from the game`,
+      metadata: { 
+        playerId, 
+        userId: gamePlayer.userId, 
+        manualPlayerId: gamePlayer.manualPlayerId 
+      },
+      performedBy: user.id,
+    });
+
+    res.json({ message: 'Player removed from game successfully' });
+  } catch (error) {
+    console.error('Error removing player from game:', error);
+    res.status(500).json(createErrorResponse('Failed to remove player from game'));
   }
 });
 

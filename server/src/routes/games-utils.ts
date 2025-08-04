@@ -95,12 +95,12 @@ export async function getChildUserIds(parentId: string): Promise<string[]> {
 export async function resolvePlayerName(userId?: string, manualPlayerId?: string): Promise<string> {
   if (userId) {
     const user = await db
-      .select({ name: userTable.name })
+      .select({ name: userTable.name, email: userTable.email })
       .from(userTable)
       .where(eq(userTable.id, userId))
       .limit(1);
     
-    return user[0]?.name || 'Unknown User';
+    return user[0]?.name || user[0]?.email || 'Unknown User';
   }
   
   if (manualPlayerId) {

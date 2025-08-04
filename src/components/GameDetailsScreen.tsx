@@ -3,7 +3,7 @@ import { ArrowLeft, Clock, MapPin, Users, Trophy, MessageCircle, Send, Edit2, Sa
 import { Game, GameComment, GamePlayer, User, ManualPlayer, GameActivity } from '../types'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { useSocket } from '../hooks/useSocket'
+import { useSocket } from '../contexts/SocketContext'
 import toast from 'react-hot-toast'
 
 interface GameDetailsScreenProps {
@@ -33,6 +33,13 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [selectedUserId, setSelectedUserId] = useState('')
   const [selectedPlayer, setSelectedPlayer] = useState<GamePlayer | null>(null)
   
+  // Enhanced player search and multi-select state
+  const [playerSearchQuery, setPlayerSearchQuery] = useState('')
+  const [playerSearchResults, setPlayerSearchResults] = useState<any[]>([])
+  const [selectedPlayers, setSelectedPlayers] = useState<Array<{id: string, name: string, createdBy?: string}>>([])
+  const [showPlayerDropdown, setShowPlayerDropdown] = useState(false)
+  const [searchLoading, setSearchLoading] = useState(false)
+  
   // Manual player state
   const [manualPlayerName, setManualPlayerName] = useState('')
   const [manualPlayerJersey, setManualPlayerJersey] = useState('')
@@ -43,7 +50,7 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const [optimisticStats, setOptimisticStats] = useState<Record<string, { statType: string; value: number; timestamp: number }[]>>({})
   const [myChildren, setMyChildren] = useState<User[]>([])
 
-  const isAdmin = user?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
   const isParent = profile?.role === 'parent'
 
   useEffect(() => {
@@ -299,6 +306,102 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
     }
   }
 
+  const removePlayer = async (playerId: string, playerName: string) => {
+    if (!window.confirm(`Are you sure you want to remove ${playerName} from this game?`)) {
+      return
+    }
+    
+    try {
+      const { error } = await api.removePlayerFromGame(gameId, playerId)
+      if (error) throw new Error(error)
+      
+      toast.success('Player removed from game!')
+      fetchGameDetails()
+    } catch (error) {
+      toast.error('Error removing player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const searchPlayers = async (query: string) => {
+    if (!query.trim()) {
+      setPlayerSearchResults([])
+      return
+    }
+
+    try {
+      setSearchLoading(true)
+      const { data, error } = await api.searchAllPlayers(query)
+      if (error) throw new Error(error)
+      
+      setPlayerSearchResults(data || [])
+    } catch (error) {
+      console.error('Error searching players:', error)
+      setPlayerSearchResults([])
+    } finally {
+      setSearchLoading(false)
+    }
+  }
+
+  const handlePlayerSearch = (query: string) => {
+    setPlayerSearchQuery(query)
+    setShowPlayerDropdown(true)
+    
+    // Debounce search
+    const timeoutId = setTimeout(() => {
+      searchPlayers(query)
+    }, 300)
+    
+    return () => clearTimeout(timeoutId)
+  }
+
+  const addPlayerToSelection = (player: any) => {
+    const playerData = {
+      id: player.id,
+      name: player.name || player.email,
+      createdBy: player.createdBy
+    }
+    
+    // Check if player is already selected
+    const isAlreadySelected = selectedPlayers.some(p => p.id === playerData.id)
+    
+    if (!isAlreadySelected) {
+      setSelectedPlayers(prev => [...prev, playerData])
+    }
+    
+    // Clear search
+    setPlayerSearchQuery('')
+    setPlayerSearchResults([])
+    setShowPlayerDropdown(false)
+  }
+
+  const removePlayerFromSelection = (id: string) => {
+    setSelectedPlayers(prev => prev.filter(p => p.id !== id))
+  }
+
+  const bulkAddPlayers = async () => {
+    if (selectedPlayers.length === 0) {
+      toast.error('Please select players to add')
+      return
+    }
+
+    try {
+      const { data, error } = await api.bulkAddPlayersToGame(gameId, selectedPlayers)
+      if (error) throw new Error(error)
+      
+      if (data.errors && data.errors.length > 0) {
+        data.errors.forEach((err: string) => toast.error(err))
+      }
+      
+      if (data.successCount > 0) {
+        toast.success(`Added ${data.successCount} player(s) to the game!`)
+        setSelectedPlayers([])
+        fetchGameDetails()
+      }
+    } catch (error) {
+      toast.error('Error adding players: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const formatGameDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -398,25 +501,27 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
   const awayTeamName = isHomeTeam ? game.opponentTeam : game.teamName
   const isCompleted = game.homeScore !== null && game.awayScore !== null
 
-  // Filter players based on user role
-  const visiblePlayers = isParent 
-    ? players.filter(player => {
-        // For parents, only show their children
-        const myChildIds = myChildren.map(child => child.id)
-        
-        // Check direct registered players
-        if (player.userId && myChildIds.includes(player.userId)) {
-          return true
-        }
-        
-        // Check manual players linked to their children
-        if (player.manualPlayer?.linkedUserId && myChildIds.includes(player.manualPlayer.linkedUserId)) {
-          return true
-        }
-        
-        return false
-      })
-    : players // Admins see all players
+  // Filter players based on user role - admins get priority over parent role
+  const visiblePlayers = isAdmin
+    ? players // Admins see all players regardless of their role
+    : isParent 
+      ? players.filter(player => {
+          // For parents, only show their children
+          const myChildIds = myChildren.map(child => child.id)
+          
+          // Check direct registered players
+          if (player.userId && myChildIds.includes(player.userId)) {
+            return true
+          }
+          
+          // Check manual players linked to their children
+          if (player.manualPlayer?.linkedUserId && myChildIds.includes(player.manualPlayer.linkedUserId)) {
+            return true
+          }
+          
+          return false
+        })
+      : players // Players see all players (but backend controls stat visibility)
 
   return (
     <div className="h-full flex flex-col">
@@ -765,9 +870,20 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                                 <h4 className="font-medium font-body text-gray-900">{displayName}</h4>
                               </div>
                             </div>
-                            {player.isStarter && (
-                              <Star className="w-4 h-4 text-yellow-500 fill-current" />
-                            )}
+                            <div className="flex items-center gap-2">
+                              {player.isStarter && (
+                                <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                              )}
+                              {isAdmin && (
+                                <button
+                                  onClick={() => removePlayer(player.id, displayName)}
+                                  className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                                  title="Remove player from game"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
                           </div>
                           
                           {/* Stats Summary */}
@@ -919,12 +1035,12 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
             </div>
           )}
 
-          {/* Add Player Modal */}
+          {/* Enhanced Add Players Modal */}
           {showAddPlayer && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 lg:pl-4 pl-16">
-              <div className="bg-white rounded-xl max-w-md w-full p-6">
+              <div className="bg-white rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold font-heading">Add Player to Game</h3>
+                  <h3 className="text-xl font-semibold font-heading">Add Players to Game</h3>
                   <button
                     onClick={() => {
                       setShowAddPlayer(false)
@@ -933,6 +1049,10 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                       setManualPlayerJersey('')
                       setManualPlayerIsStarter(false)
                       setManualPlayerNotes('')
+                      setPlayerSearchQuery('')
+                      setPlayerSearchResults([])
+                      setSelectedPlayers([])
+                      setShowPlayerDropdown(false)
                     }}
                     className="p-1 text-gray-400 hover:text-gray-600"
                   >
@@ -940,40 +1060,90 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                   </button>
                 </div>
                 
-                <div className="space-y-4">
-                  {/* Registered Players */}
+                <div className="space-y-6">
+                  {/* Universal Player Search */}
                   <div>
                     <label className="block text-sm font-medium font-body text-gray-700 mb-2">
-                      Add Registered Player
+                      🔍 Search Players (Registered Users & Manual Players)
                     </label>
-                    <select
-                      value={selectedUserId}
-                      onChange={(e) => setSelectedUserId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
-                    >
-                      <option value="">Select a player...</option>
-                      {allUsers
-                        .filter(u => u.role === 'player' && !players.some(p => p.userId === u.id))
-                        .map(u => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} {u.jerseyNumber ? `(#${u.jerseyNumber})` : ''}
-                          </option>
-                        ))}
-                    </select>
-                    {selectedUserId && (
-                      <button
-                        onClick={addRegisteredPlayer}
-                        className="mt-2 w-full px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors font-body"
-                      >
-                        Add Player
-                      </button>
-                    )}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={playerSearchQuery}
+                        onChange={(e) => handlePlayerSearch(e.target.value)}
+                        onFocus={() => setShowPlayerDropdown(true)}
+                        placeholder="Type player name or email to search..."
+                        className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
+                      />
+                      {searchLoading && (
+                        <div className="absolute right-3 top-2.5">
+                          <div className="animate-spin w-5 h-5 border-2 border-primary-600 border-t-transparent rounded-full"></div>
+                        </div>
+                      )}
+                      
+                      {/* Search Results Dropdown */}
+                      {showPlayerDropdown && playerSearchResults.length > 0 && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                          {playerSearchResults.map((player) => (
+                            <button
+                              key={`${player.type}-${player.id}`}
+                              onClick={() => addPlayerToSelection(player)}
+                              className="w-full px-3 py-2 text-left hover:bg-gray-50 border-b border-gray-100 last:border-b-0 flex items-center justify-between"
+                            >
+                              <div>
+                                <div className="font-medium">{player.name || player.email}</div>
+                                <div className="text-sm text-gray-500">
+                                  {player.createdBy === 'manual' ? '📝 Manual Player' : '👤 Registered User'}
+                                  {player.jerseyNumber && ` • #${player.jerseyNumber}`}
+                                </div>
+                              </div>
+                              <Plus className="w-4 h-4 text-green-600" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Manual Player Addition */}
+                  {/* Selected Players */}
+                  {selectedPlayers.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium font-body text-gray-700 mb-2">
+                        Selected Players ({selectedPlayers.length})
+                      </label>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {selectedPlayers.map((player, index) => (
+                          <div key={`${player.type}-${player.id}-${index}`} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm">
+                                {player.createdBy === 'manual' ? '📝' : '👤'}
+                              </span>
+                              <span className="font-medium">{player.name}</span>
+                            </div>
+                            <button
+                              onClick={() => removePlayerFromSelection(player.id)}
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={bulkAddPlayers}
+                        className="mt-3 w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-body flex items-center justify-center gap-2"
+                      >
+                        <Users className="w-4 h-4" />
+                        Add {selectedPlayers.length} Player{selectedPlayers.length !== 1 ? 's' : ''} to Game
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Quick Add Manual Player */}
                   <div className="border-t border-gray-200 pt-4">
                     <label className="block text-sm font-medium font-body text-gray-700 mb-2">
-                      Or Add Manual Player
+                      ➕ Quick Add New Manual Player
                     </label>
                     <div className="space-y-3">
                       <div>
@@ -1005,13 +1175,6 @@ export function GameDetailsScreen({ gameId, onBack }: GameDetailsScreenProps) {
                           <span className="ml-2 text-sm text-gray-700 font-body">Starter</span>
                         </label>
                       </div>
-                      <textarea
-                        value={manualPlayerNotes}
-                        onChange={(e) => setManualPlayerNotes(e.target.value)}
-                        placeholder="Notes (optional)"
-                        rows={2}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body"
-                      />
                       <button
                         onClick={addManualPlayer}
                         disabled={!manualPlayerName.trim()}

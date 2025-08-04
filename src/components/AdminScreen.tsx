@@ -2,12 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Shield, Trash2, User as UserIcon, Trophy, AlertTriangle, Users, Edit2, MessageCircle, Plus, X, Calendar, Share, Flag, CheckCircle, XCircle, Play } from 'lucide-react'
 import { api } from '../lib/api'
 import { useAuth } from '../contexts/AuthContext'
-import { User, Workout, TeamWithMemberCount, TeamMember, Game } from '../types'
+import { User, TeamWithMemberCount, TeamMember, Game } from '../types'
 import toast from 'react-hot-toast'
 
-interface WorkoutWithUser extends Workout {
-  user?: User
-}
 
 interface AdminScreenProps {
   onGameClick?: (gameId: string) => void
@@ -15,7 +12,6 @@ interface AdminScreenProps {
 
 export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const { profile } = useAuth()
-  const [workouts, setWorkouts] = useState<WorkoutWithUser[]>([])
   const [profiles, setProfiles] = useState<User[]>([])
   const [parentChildRelations, setParentChildRelations] = useState<{parent: User, child: User | null}[]>([])
   const [parentChildRelationships, setParentChildRelationships] = useState<any[]>([])
@@ -29,7 +25,7 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const [showLinkManualPlayer, setShowLinkManualPlayer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [selectedUser, setSelectedUser] = useState<string>('all')
-  const [currentTab, setCurrentTab] = useState<'workouts' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports' | 'manual-players'>('workouts')
+  const [currentTab, setCurrentTab] = useState<'users' | 'relations' | 'teams' | 'games' | 'unverified' | 'reports' | 'manual-players'>('users')
   const [reports, setReports] = useState<any[]>([])
   const [reportFilter, setReportFilter] = useState<'pending' | 'resolved' | 'dismissed' | 'all'>('pending')
   const [editingRelation, setEditingRelation] = useState<string | null>(null)
@@ -48,20 +44,26 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   const [editingGameTime, setEditingGameTime] = useState<string | null>(null)
   const [editGameDate, setEditGameDate] = useState('')
   const [editGameTime, setEditGameTime] = useState('')
+  const [editingTeamNames, setEditingTeamNames] = useState<string | null>(null)
+  const [editHomeTeamName, setEditHomeTeamName] = useState('')
+  const [editAwayTeamName, setEditAwayTeamName] = useState('')
+  
+  // Users table state
+  const [userSearchQuery, setUserSearchQuery] = useState('')
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | 'player' | 'parent'>('all')
+  const [userStatusFilter, setUserStatusFilter] = useState<'all' | 'verified' | 'unverified'>('all')
+  const [userTypeFilter, setUserTypeFilter] = useState<'all' | 'oauth' | 'manual'>('all')
+  
   const fetchingData = useRef(false)
 
   // Check if user is admin
-  const isAdmin = profile?.email === 'codydearkland@gmail.com'
+  const isAdmin = profile?.isAdmin === true
 
   const fetchData = useCallback(async () => {
     if (fetchingData.current) return // Prevent duplicate calls
     
     fetchingData.current = true
     try {
-      // Fetch all workouts with user profiles
-      const { data: workoutData, error: workoutError } = await api.getAllWorkouts()
-      if (workoutError) throw new Error(workoutError)
-
       // Fetch all profiles
       const { data: profileData, error: profileError } = await api.getAllProfiles()
       if (profileError) throw new Error(profileError)
@@ -91,7 +93,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
       const { data: manualPlayersData, error: manualPlayersError } = await api.getAllManualPlayers()
       if (manualPlayersError) throw new Error(manualPlayersError)
 
-      setWorkouts(workoutData || [])
       setProfiles(profileData || [])
       setParentChildRelations(relationData || [])
       setParentChildRelationships(relationshipData || [])
@@ -107,15 +108,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   }, [])
 
   // Targeted refresh functions to avoid full data reload
-  const refreshWorkouts = useCallback(async () => {
-    try {
-      const { data: workoutData, error: workoutError } = await api.getAllWorkouts()
-      if (workoutError) throw new Error(workoutError)
-      setWorkouts(workoutData || [])
-    } catch (error) {
-      console.error('Error refreshing workouts:', error)
-    }
-  }, [])
 
   const refreshRelations = useCallback(async () => {
     try {
@@ -194,18 +186,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
     }
   }, [isAdmin, currentTab, loadReports])
 
-  const deleteWorkout = async (workoutId: string, pointsToDeduct: number, userId: string) => {
-    try {
-      // Use the existing delete workout API endpoint which handles point adjustment
-      const { error } = await api.deleteWorkout(workoutId)
-      if (error) throw new Error(error)
-
-      toast.success('Workout deleted and points adjusted')
-      refreshWorkouts() // Only refresh workouts
-    } catch (error: unknown) {
-      toast.error('Error deleting workout: ' + (error instanceof Error ? error.message : String(error)))
-    }
-  }
 
   const updateChildAssignment = async (parentId: string, childId: string | null) => {
     try {
@@ -354,6 +334,71 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
     }
   }
 
+  const migrateManualPlayer = async (manualPlayerId: string) => {
+    if (!confirm('TEST MIGRATION: This will copy all game data to the linked user account but keep the manual entry for testing. You can then unlink to verify the data moved correctly.')) {
+      return
+    }
+
+    try {
+      const { data, error } = await api.migrateManualPlayer(manualPlayerId)
+      if (error) throw new Error(error)
+
+      // Show detailed migration results
+      if (data?.migrationStats) {
+        const stats = data.migrationStats
+        const successMessage = `Migration ${data.success ? 'Successful' : 'Completed with Issues'}:
+        
+📊 Migration Summary:
+• ${stats.summary}
+• User profile updated: ${stats.userUpdated ? '✅' : '❌'}
+• Game stats migrated: ${stats.gameStatsMigrated}
+${stats.duplicatesFound > 0 ? `• Duplicates skipped: ${stats.duplicatesFound}` : ''}
+${stats.errors.length > 0 ? `\n⚠️ Issues:\n${stats.errors.slice(0, 3).join('\n')}` : ''}
+
+Check server logs for detailed migration status.`
+
+        if (data.success) {
+          toast.success(successMessage, { duration: 8000 })
+        } else {
+          toast.error(successMessage, { duration: 10000 })
+        }
+      } else {
+        toast.success('Manual player data migrated successfully!')
+      }
+      
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error migrating manual player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
+  const deleteMigratedManualPlayer = async (manualPlayerId: string, playerName: string) => {
+    if (!confirm(`⚠️ PERMANENT DELETE: Remove manual player "${playerName}" from the system?\n\nThis action:\n• Deletes the manual player entry permanently\n• Cannot be undone\n• Use only after confirming migration was successful\n\nAre you sure?`)) {
+      return
+    }
+
+    try {
+      // Try regular delete first
+      const { data, error } = await api.deleteMigratedManualPlayer(manualPlayerId)
+      if (error) {
+        // If regular delete fails, offer force delete option
+        if (confirm(`Regular delete failed: ${error}\n\n🚨 FORCE DELETE OPTION:\nThis will bypass safety checks and delete the manual player immediately.\n\nOnly use if you're certain the migration was successful.\n\nForce delete "${playerName}"?`)) {
+          const { data: forceData, error: forceError } = await api.forceDeleteManualPlayer(manualPlayerId)
+          if (forceError) throw new Error(`Force delete failed: ${forceError}`)
+          
+          toast.success(`Manual player "${playerName}" force deleted successfully`)
+          refreshManualPlayers()
+        }
+        return
+      }
+
+      toast.success(`Manual player "${playerName}" deleted successfully`)
+      refreshManualPlayers()
+    } catch (error: unknown) {
+      toast.error('Error deleting manual player: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const addTeamMember = async (teamId: string, userId: string) => {
     try {
       const { error } = await api.addTeamMember(teamId, userId)
@@ -492,6 +537,64 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
     }
   }
 
+  const startEditingTeamNames = (gameId: string, currentTeamName: string, currentOpponentTeam: string) => {
+    const game = games.find(g => g.id === gameId)
+    if (!game) return
+    
+    const isHomeTeam = game.isHome
+    const homeTeamName = isHomeTeam ? currentTeamName : currentOpponentTeam
+    const awayTeamName = isHomeTeam ? currentOpponentTeam : currentTeamName
+    
+    setEditHomeTeamName(homeTeamName)
+    setEditAwayTeamName(awayTeamName)
+    setEditingTeamNames(gameId)
+  }
+
+  const cancelEditingTeamNames = () => {
+    setEditingTeamNames(null)
+    setEditHomeTeamName('')
+    setEditAwayTeamName('')
+  }
+
+  const updateTeamNames = async (gameId: string) => {
+    if (!editHomeTeamName.trim() || !editAwayTeamName.trim()) {
+      toast.error('Please provide both team names')
+      return
+    }
+
+    try {
+      const game = games.find(g => g.id === gameId)
+      if (!game) {
+        toast.error('Game not found')
+        return
+      }
+
+      // Determine which team name goes where based on isHome
+      const isHomeTeam = game.isHome
+      const teamName = isHomeTeam ? editHomeTeamName.trim() : editAwayTeamName.trim()
+      const opponentTeam = isHomeTeam ? editAwayTeamName.trim() : editHomeTeamName.trim()
+
+      const response = await api.request(`/games/${gameId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ 
+          teamName: teamName,
+          opponentTeam: opponentTeam
+        })
+      })
+      if (response.error) {
+        throw new Error(response.error)
+      }
+      
+      toast.success('Team names updated successfully')
+      setEditingTeamNames(null)
+      setEditHomeTeamName('')
+      setEditAwayTeamName('')
+      refreshGames()
+    } catch (error: unknown) {
+      toast.error('Error updating team names: ' + (error instanceof Error ? error.message : String(error)))
+    }
+  }
+
   const updateReportStatus = async (reportId: string, status: 'resolved' | 'dismissed', adminNotes?: string) => {
     try {
       const response = await api.request(`/reports/${reportId}`, {
@@ -566,9 +669,27 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
     }
   }
 
-  const filteredWorkouts = selectedUser === 'all' 
-    ? workouts 
-    : workouts.filter(w => w.user_id === selectedUser)
+  // Filter users based on search and filters
+  const filteredUsers = profiles.filter(user => {
+    // Search filter
+    const searchMatch = !userSearchQuery || 
+      user.name?.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(userSearchQuery.toLowerCase())
+    
+    // Role filter
+    const roleMatch = userRoleFilter === 'all' || user.role === userRoleFilter
+    
+    // Status filter
+    const statusMatch = userStatusFilter === 'all' || 
+      (userStatusFilter === 'verified' && user.isVerified) ||
+      (userStatusFilter === 'unverified' && !user.isVerified)
+    
+    // Type filter
+    const typeMatch = userTypeFilter === 'all' || user.createdBy === userTypeFilter
+    
+    return searchMatch && roleMatch && statusMatch && typeMatch
+  })
+
 
   if (!isAdmin) {
     return (
@@ -584,8 +705,8 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
 
   if (loading) {
     return (
-      <div className="p-4 lg:p-6 pb-20 lg:pb-0 max-w-4xl lg:mx-auto">
-        <div className="text-center py-12">
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
           <p className="font-body text-gray-600">Loading admin data...</p>
         </div>
@@ -596,13 +717,10 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
   return (
     <div className="h-full flex flex-col">
       {/* Fixed Header */}
-      <div className="bg-bg-primary border-b border-border-primary p-4 lg:p-6 flex-shrink-0">
-        <div className="max-w-6xl lg:mx-auto">
-          <div className="flex items-center gap-3 mb-2">
-            <Shield className="w-8 h-8 text-primary-600" />
-            <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Admin Panel</h1>
-          </div>
-          <p className="font-body text-text-secondary">Manage player workouts and activity</p>
+      <div className="bg-bg-primary border-b border-border-primary p-3 lg:p-6 flex-shrink-0 z-40">
+        <div className="flex items-center gap-2">
+          <Shield className="w-6 h-6 lg:w-8 lg:h-8 text-primary-600" />
+          <h1 className="text-xl lg:text-4xl font-bold font-heading text-text-primary">Admin Panel</h1>
         </div>
       </div>
 
@@ -618,15 +736,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
             <div>
               <div className="text-2xl font-bold font-body text-gray-900">{profiles.length}</div>
               <div className="text-sm font-body text-gray-600">Total Players</div>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-          <div className="flex items-center gap-3">
-            <Trophy className="w-8 h-8 text-primary-500" />
-            <div>
-              <div className="text-2xl font-bold font-body text-gray-900">{workouts.length}</div>
-              <div className="text-sm font-body text-gray-600">Total Workouts</div>
             </div>
           </div>
         </div>
@@ -648,14 +757,14 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         {/* First Row - Main Management */}
         <div className="flex flex-wrap border-b border-gray-200">
           <button
-            onClick={() => setCurrentTab('workouts')}
+            onClick={() => setCurrentTab('users')}
             className={`flex-1 min-w-0 px-3 sm:px-4 lg:px-6 py-3 font-medium font-body transition-colors text-sm lg:text-base ${
-              currentTab === 'workouts'
+              currentTab === 'users'
                 ? 'text-primary-600 border-b-2 border-primary-600 bg-primary-50' 
                 : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
             }`}
           >
-            <span className="truncate">Workouts</span>
+            <span className="truncate">Users</span>
           </button>
           <button
             onClick={() => setCurrentTab('teams')}
@@ -724,7 +833,227 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         </div>
       </div>
 
-      {currentTab === 'teams' ? (
+      {currentTab === 'users' ? (
+        /* Users Management */
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100">
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold font-heading text-gray-900">All Users</h3>
+                <p className="text-sm font-body text-gray-600">Complete database of all registered users</p>
+                {(() => {
+                  const usersWithLinkedPlayers = profiles.filter(user => 
+                    manualPlayers.some(mp => mp.linkedUserId === user.id)
+                  );
+                  return usersWithLinkedPlayers.length > 0 ? (
+                    <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-sm font-body text-orange-800">
+                        ⚠️ {usersWithLinkedPlayers.length} user{usersWithLinkedPlayers.length > 1 ? 's have' : ' has'} linked manual players that need migration
+                      </p>
+                    </div>
+                  ) : null;
+                })()}
+              </div>
+              <div className="text-sm font-body text-gray-500">
+                {filteredUsers.length} of {profiles.length} users
+              </div>
+            </div>
+          </div>
+
+          {/* Search and Filters */}
+          <div className="p-4 border-b border-gray-200 bg-gray-50">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Search */}
+              <div>
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Search users..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body text-sm"
+                />
+              </div>
+              
+              {/* Role Filter */}
+              <div>
+                <select
+                  value={userRoleFilter}
+                  onChange={(e) => setUserRoleFilter(e.target.value as 'all' | 'player' | 'parent')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body text-sm"
+                >
+                  <option value="all">All Roles</option>
+                  <option value="player">Players</option>
+                  <option value="parent">Parents</option>
+                </select>
+              </div>
+              
+              {/* Status Filter */}
+              <div>
+                <select
+                  value={userStatusFilter}
+                  onChange={(e) => setUserStatusFilter(e.target.value as 'all' | 'verified' | 'unverified')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body text-sm"
+                >
+                  <option value="all">All Status</option>
+                  <option value="verified">Verified</option>
+                  <option value="unverified">Unverified</option>
+                </select>
+              </div>
+              
+              {/* Type Filter */}
+              <div>
+                <select
+                  value={userTypeFilter}
+                  onChange={(e) => setUserTypeFilter(e.target.value as 'all' | 'oauth' | 'manual')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-body text-sm"
+                >
+                  <option value="all">All Types</option>
+                  <option value="oauth">OAuth Users</option>
+                  <option value="manual">Manual Users</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4">
+            {filteredUsers.length === 0 ? (
+              <div className="text-center py-8">
+                <UserIcon className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                <p className="font-body text-gray-500">
+                  {userSearchQuery || userRoleFilter !== 'all' || userStatusFilter !== 'all' || userTypeFilter !== 'all' 
+                    ? 'No users match your filters' 
+                    : 'No users found'
+                  }
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left p-3 font-medium font-body text-gray-700">User</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Email</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Role</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Type</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Status</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Points</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Jersey</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Joined</th>
+                      <th className="text-left p-3 font-medium font-body text-gray-700">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((user) => (
+                      <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50">
+                        <td className="p-3">
+                          <div className="flex items-center gap-3">
+                            {user.avatarUrl ? (
+                              <img
+                                src={user.avatarUrl}
+                                alt="Avatar"
+                                className="w-8 h-8 rounded-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                {(user.name || user.email)?.[0]?.toUpperCase()}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-medium font-body text-gray-900">
+                                {user.name || user.email.split('@')[0]}
+                              </div>
+                              <div className="flex items-center gap-2 mt-1">
+                                {user.isAdmin && (
+                                  <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">
+                                    Admin
+                                  </span>
+                                )}
+                                {(() => {
+                                  const linkedManualPlayers = manualPlayers.filter(mp => mp.linkedUserId === user.id);
+                                  return linkedManualPlayers.length > 0 ? (
+                                    <span className="text-xs bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-body">
+                                      🔗 {linkedManualPlayers.length} Linked Player{linkedManualPlayers.length > 1 ? 's' : ''} - Needs Migration
+                                    </span>
+                                  ) : null;
+                                })()}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="p-3 font-body text-gray-600">{user.email}</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 text-xs font-medium font-body rounded-full ${
+                            user.role === 'parent' 
+                              ? 'bg-blue-100 text-blue-700' 
+                              : 'bg-green-100 text-green-700'
+                          }`}>
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <span className={`px-2 py-1 text-xs font-medium font-body rounded-full ${
+                            user.createdBy === 'manual' 
+                              ? 'bg-orange-100 text-orange-700' 
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {user.createdBy === 'manual' ? 'Manual' : 'OAuth'}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full ${
+                              user.isVerified ? 'bg-green-500' : 'bg-red-500'
+                            }`}></span>
+                            <span className="text-sm font-body text-gray-600">
+                              {user.isVerified ? 'Verified' : 'Unverified'}
+                            </span>
+                            {user.isOnboarded && (
+                              <span className="text-xs bg-gray-100 text-gray-600 px-1 py-0.5 rounded">
+                                Onboarded
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 font-body text-gray-600">
+                          {user.totalPoints || 0}
+                        </td>
+                        <td className="p-3 font-body text-gray-600">
+                          {user.jerseyNumber ? `#${user.jerseyNumber}` : '-'}
+                        </td>
+                        <td className="p-3 font-body text-gray-600 text-sm">
+                          {new Date(user.createdAt).toLocaleDateString()}
+                        </td>
+                        <td className="p-3">
+                          <div className="flex items-center gap-2">
+                            {!user.isVerified && (
+                              <button
+                                onClick={() => approveUser(user.id, user.name || user.email)}
+                                className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-body"
+                              >
+                                Approve
+                              </button>
+                            )}
+                            <button
+                              onClick={() => {
+                                navigator.clipboard.writeText(user.id)
+                                toast.success('User ID copied to clipboard')
+                              }}
+                              className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors font-body"
+                              title="Copy User ID"
+                            >
+                              Copy ID
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : currentTab === 'teams' ? (
         /* Team Management */
         <div className="space-y-6">
           {/* Create Team Section */}
@@ -733,7 +1062,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold font-heading text-gray-900">Team Management</h3>
-                  <p className="text-sm font-body text-gray-600">Create and manage chat teams for players</p>
                 </div>
                 <button
                   onClick={() => setShowCreateTeam(!showCreateTeam)}
@@ -922,7 +1250,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold font-heading text-gray-900">Games Management</h3>
-                  <p className="text-sm font-body text-gray-600">Create and manage game schedule</p>
                 </div>
                 <button
                   onClick={() => setShowCreateGame(!showCreateGame)}
@@ -1137,9 +1464,30 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                 <div className="flex items-center justify-center gap-2 mb-2">
                                   <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Home</span>
                                 </div>
-                                <h4 className="text-lg font-bold font-heading text-gray-900 mb-2">
-                                  {homeTeamName}
-                                </h4>
+                                {editingTeamNames === game.id ? (
+                                  <div className="space-y-2 mb-2">
+                                    <input
+                                      type="text"
+                                      value={editHomeTeamName}
+                                      onChange={(e) => setEditHomeTeamName(e.target.value)}
+                                      placeholder="Home team name"
+                                      className="w-full px-2 py-1 text-center text-lg font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-heading"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-center gap-2 mb-2">
+                                    <h4 className="text-lg font-bold font-heading text-gray-900">
+                                      {homeTeamName}
+                                    </h4>
+                                    <button
+                                      onClick={() => startEditingTeamNames(game.id, game.teamName, game.opponentTeam)}
+                                      className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+                                      title="Edit team names"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
                                 <div className="space-y-2">
                                   <input
                                     type="number"
@@ -1157,7 +1505,24 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
 
                               {/* VS Separator */}
                               <div className="px-4 py-6 bg-white border-t border-b border-gray-200">
-                                <div className="text-xl font-bold text-gray-400 font-body">VS</div>
+                                {editingTeamNames === game.id ? (
+                                  <div className="flex flex-col gap-2">
+                                    <button
+                                      onClick={() => updateTeamNames(game.id)}
+                                      className="px-2 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors"
+                                    >
+                                      Save
+                                    </button>
+                                    <button
+                                      onClick={cancelEditingTeamNames}
+                                      className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-sm hover:bg-gray-400 transition-colors"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="text-xl font-bold text-gray-400 font-body">VS</div>
+                                )}
                               </div>
 
                               {/* Away Team */}
@@ -1165,9 +1530,21 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                                 <div className="flex items-center justify-center gap-2 mb-2">
                                   <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Away</span>
                                 </div>
-                                <h4 className="text-lg font-bold font-heading text-gray-900 mb-2">
-                                  {awayTeamName}
-                                </h4>
+                                {editingTeamNames === game.id ? (
+                                  <div className="space-y-2 mb-2">
+                                    <input
+                                      type="text"
+                                      value={editAwayTeamName}
+                                      onChange={(e) => setEditAwayTeamName(e.target.value)}
+                                      placeholder="Away team name"
+                                      className="w-full px-2 py-1 text-center text-lg font-bold border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 font-heading"
+                                    />
+                                  </div>
+                                ) : (
+                                  <h4 className="text-lg font-bold font-heading text-gray-900 mb-2">
+                                    {awayTeamName}
+                                  </h4>
+                                )}
                                 <div className="space-y-2">
                                   <input
                                     type="number"
@@ -1200,7 +1577,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold font-heading text-gray-900">Parent-Child Relationships</h3>
-              <p className="text-sm font-body text-gray-600">Manage parent-child relationships (parents can have multiple children)</p>
             </div>
             {/* Add Relationship Section */}
             <div className="p-4 border-b border-gray-200 bg-gray-50">
@@ -1350,7 +1726,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold font-heading text-gray-900">Legacy Parent-Child Assignments</h3>
-              <p className="text-sm font-body text-gray-600">Old single-child assignments (will be migrated)</p>
             </div>
             
             {parentChildRelations.length === 0 ? (
@@ -1441,7 +1816,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
         <div className="bg-white rounded-xl shadow-sm border border-gray-100">
           <div className="p-4 border-b border-gray-200">
             <h3 className="text-lg font-semibold font-heading text-gray-900">Unverified Users</h3>
-            <p className="text-sm font-body text-gray-600">Users who have signed up but haven't been verified yet</p>
           </div>
           
           {profiles.filter(p => !p.isVerified).length === 0 ? (
@@ -1501,7 +1875,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
           <div className="bg-white rounded-xl shadow-sm border border-gray-100">
             <div className="p-4 border-b border-gray-200">
               <h3 className="text-lg font-semibold font-heading text-gray-900">Unlinked Manual Players</h3>
-              <p className="text-sm font-body text-gray-600">These manual players haven't been linked to any registered users yet</p>
             </div>
             <div className="p-4">
               {(() => {
@@ -1555,7 +1928,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold font-heading text-gray-900">Manual Players</h3>
-                  <p className="text-sm font-body text-gray-600">Manage manually added players and link them to registered users</p>
                 </div>
                 <button
                   onClick={() => setShowLinkManualPlayer(!showLinkManualPlayer)}
@@ -1667,22 +2039,44 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         {player.linkedUserId ? (
-                          <button
-                            onClick={() => unlinkManualPlayer(player.id)}
-                            className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors font-body"
-                          >
-                            Unlink
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => migrateManualPlayer(player.id)}
+                              className="px-3 py-1 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors font-body"
+                            >
+                              Migrate Data
+                            </button>
+                            <button
+                              onClick={() => deleteMigratedManualPlayer(player.id, player.name)}
+                              className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors font-body"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => unlinkManualPlayer(player.id)}
+                              className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors font-body"
+                            >
+                              Unlink
+                            </button>
+                          </div>
                         ) : (
-                          <button
-                            onClick={() => {
-                              setSelectedManualPlayer(player.id)
-                              setShowLinkManualPlayer(true)
-                            }}
-                            className="px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors font-body"
-                          >
-                            Link
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setSelectedManualPlayer(player.id)
+                                setShowLinkManualPlayer(true)
+                              }}
+                              className="px-3 py-1 text-sm bg-primary-100 text-primary-700 rounded-lg hover:bg-primary-200 transition-colors font-body"
+                            >
+                              Link
+                            </button>
+                            <button
+                              onClick={() => deleteMigratedManualPlayer(player.id, player.name)}
+                              className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200 transition-colors font-body"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -1701,7 +2095,6 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-lg font-semibold font-heading text-gray-900">Content Reports</h3>
-                  <p className="text-sm font-body text-gray-600">Manage user reports for posts and media content</p>
                 </div>
                 <div className="flex gap-2">
                   {(['pending', 'resolved', 'dismissed', 'all'] as const).map((filter) => (
@@ -1873,98 +2266,10 @@ export function AdminScreen({ onGameClick }: AdminScreenProps) {
           </div>
         </div>
       ) : (
-        <>
-          {/* User Filter */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 mb-6">
-            <label className="block text-sm font-medium font-body text-gray-700 mb-2">
-              Filter by Player
-            </label>
-            <select
-              value={selectedUser}
-              onChange={(e) => setSelectedUser(e.target.value)}
-              className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent font-body"
-            >
-              <option value="all">All Players</option>
-              {profiles.filter(p => p.role === 'player').map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name || profile.email.split('@')[0]} ({profile.totalPoints || 0} pts)
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Workouts List */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100">
-            <div className="p-4 border-b border-gray-200">
-              <h3 className="text-lg font-semibold font-heading text-gray-900">Recent Workouts</h3>
-              <p className="text-sm font-body text-gray-600">Click the trash icon to remove a workout and adjust points</p>
-            </div>
-            
-            {filteredWorkouts.length === 0 ? (
-              <div className="p-8 text-center">
-                <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                <p className="font-body text-gray-500">No workouts found</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-100">
-                {filteredWorkouts.map((workout, index) => (
-                  <div
-                    key={workout.id}
-                    className="p-4 hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        {/* User Avatar */}
-                        {(workout.user as any)?.avatarUrl ? (
-                          <img
-                            src={(workout.user as any).avatarUrl}
-                            alt="Profile"
-                            className="w-10 h-10 rounded-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 bg-gradient-to-br from-primary-400 to-primary-600 rounded-full flex items-center justify-center text-white font-bold">
-                            {((workout.profiles as any)?.name || (workout.profiles as any)?.email)?.[0]?.toUpperCase()}
-                          </div>
-                        )}
-                        
-                        {/* Workout Info */}
-                        <div>
-                          <div className="flex items-center gap-2 mb-1 font-body">
-                            <span className="font-semibold font-body text-gray-900">
-                              {(workout.profiles as any)?.name || (workout.profiles as any)?.email?.split('@')[0]}
-                            </span>
-                            <span className="text-sm font-body text-gray-500">•</span>
-                            <span className="text-sm font-body text-gray-500">{formatTime(workout.created_at)}</span>
-                          </div>
-                          <div className="flex items-center gap-4 text-sm font-body text-gray-600">
-                            <span className="capitalize font-medium font-body">{workout.exercise_type}</span>
-                            <span className="font-body">{workout.duration_minutes} minutes</span>
-                            <span className="text-primary-600 font-semibold font-body">+{workout.points_earned} points</span>
-                          </div>
-                          {workout.notes && (
-                            <p className="text-sm font-body text-gray-500 mt-1 italic">"{workout.notes}"</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Delete Button */}
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete this ${workout.exercise_type} workout? This will deduct ${workout.points_earned} points from ${(workout.profiles as any)?.name || 'the player'}.`)) {
-                            deleteWorkout(workout.id, workout.points_earned, workout.user_id)
-                          }
-                        }}
-                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+          <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <p className="font-body text-gray-500">Select a tab to view content</p>
+        </div>
       )}
         </div>
       </div>

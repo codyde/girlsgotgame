@@ -31,19 +31,12 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
       if (allGamesResponse.error) throw new Error(allGamesResponse.error)
       if (myGamesResponse.error) throw new Error(myGamesResponse.error)
 
-      // Sort games by date (soonest first)
-      const sortedAllGames = (allGamesResponse.data || []).sort((a, b) => 
-        new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
-      )
-      const sortedMyGames = (myGamesResponse.data || []).sort((a, b) => 
-        new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime()
-      )
-
-      setAllGames(sortedAllGames)
-      setMyGames(sortedMyGames)
+      // Don't sort here - we'll sort when rendering to separate upcoming/previous
+      setAllGames(allGamesResponse.data || [])
+      setMyGames(myGamesResponse.data || [])
 
       // If user has no games of their own, default to all games tab
-      if (user && sortedMyGames.length === 0) {
+      if (user && (myGamesResponse.data || []).length === 0) {
         setActiveTab('all-games')
       }
     } catch (error) {
@@ -97,11 +90,34 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
     }
   }
 
+  const separateAndSortGames = (games: Game[]) => {
+    const now = new Date()
+    const upcoming: Game[] = []
+    const previous: Game[] = []
+
+    games.forEach(game => {
+      const gameDate = new Date(game.gameDate)
+      if (gameDate >= now) {
+        upcoming.push(game)
+      } else {
+        previous.push(game)
+      }
+    })
+
+    // Sort upcoming games: soonest first
+    upcoming.sort((a, b) => new Date(a.gameDate).getTime() - new Date(b.gameDate).getTime())
+    
+    // Sort previous games: most recent first (reverse chronological)
+    previous.sort((a, b) => new Date(b.gameDate).getTime() - new Date(a.gameDate).getTime())
+
+    return { upcoming, previous }
+  }
+
 
   if (loading) {
     return (
-      <div className="p-4 lg:p-6 pb-20 lg:pb-0 max-w-4xl lg:mx-auto">
-        <div className="text-center py-12">
+      <div className="h-full flex items-center justify-center">
+        <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4"></div>
           <p className="font-body text-gray-600">Loading games...</p>
         </div>
@@ -168,115 +184,175 @@ export function GamesScreen({ onGameClick }: GamesScreenProps) {
               ? 'You haven\'t played in any games yet. Games you participate in will appear here!'
               : 'Check back later for upcoming games!'
 
-            return currentGames.length === 0 ? (
-              <div className="text-center py-12">
-                <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                <h2 className="text-xl font-bold font-heading text-gray-600 mb-2">{emptyTitle}</h2>
-                <p className="font-body text-gray-500">{emptyMessage}</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {currentGames.map((game) => {
-                const status = getGameStatus(game)
-                const winner = getWinner(game)
-                const isHomeTeam = game.isHome
-                const homeTeamName = isHomeTeam ? game.teamName : game.opponentTeam
-                const awayTeamName = isHomeTeam ? game.opponentTeam : game.teamName
-                
-                return (
-                  <div
-                    key={game.id}
-                    onClick={() => onGameClick?.(game.id)}
-                    className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
-                  >
-                    {/* Game Status Banner */}
-                    <div className={`px-4 py-2 text-sm font-medium font-body ${
-                      status === 'completed' 
-                        ? 'bg-green-100 text-green-800' 
-                        : status === 'in-progress'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {status === 'completed' ? 'Final' : status === 'in-progress' ? 'In Progress' : 'Upcoming'}
+            if (currentGames.length === 0) {
+              return (
+                <div className="text-center py-12">
+                  <Calendar className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                  <h2 className="text-xl font-bold font-heading text-gray-600 mb-2">{emptyTitle}</h2>
+                  <p className="font-body text-gray-500">{emptyMessage}</p>
+                </div>
+              )
+            }
+
+            const { upcoming, previous } = separateAndSortGames(currentGames)
+
+            const renderGame = (game: Game) => {
+              const status = getGameStatus(game)
+              const winner = getWinner(game)
+              const isHomeTeam = game.isHome
+              const homeTeamName = isHomeTeam ? game.teamName : game.opponentTeam
+              const awayTeamName = isHomeTeam ? game.opponentTeam : game.teamName
+              
+              // Determine if our team won or lost
+              const ourTeamWon = (winner === 'home' && isHomeTeam) || (winner === 'away' && !isHomeTeam)
+              const opponentWon = (winner === 'home' && !isHomeTeam) || (winner === 'away' && isHomeTeam)
+              
+              return (
+                <div
+                  key={game.id}
+                  onClick={() => onGameClick?.(game.id)}
+                  className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+                >
+                  {/* Game Status Banner */}
+                  <div className={`px-4 py-2 text-sm font-medium font-body ${
+                    status === 'completed' 
+                      ? 'bg-green-100 text-green-800' 
+                      : status === 'in-progress'
+                      ? 'bg-yellow-100 text-yellow-800'
+                      : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {status === 'completed' ? 'Final' : status === 'in-progress' ? 'In Progress' : 'Upcoming'}
+                  </div>
+
+                  <div className="p-6">
+                    {/* Date and Time */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600 font-body mb-4">
+                      <Clock className="w-4 h-4" />
+                      <span>{formatGameDate(game.gameDate)}</span>
                     </div>
 
-                    <div className="p-6">
-                      {/* Date and Time */}
-                      <div className="flex items-center gap-2 text-sm text-gray-600 font-body mb-4">
-                        <Clock className="w-4 h-4" />
-                        <span>{formatGameDate(game.gameDate)}</span>
-                      </div>
-
-                      {/* Teams and Score Card */}
-                      <div className="flex items-center justify-center">
-                        <div className="flex items-center w-full max-w-2xl">
-                          {/* Home Team */}
-                          <div className={`flex-1 text-center p-4 ${
-                            winner === 'home' ? 'bg-green-50 border-2 border-green-200' : 'bg-gray-50'
-                          } rounded-l-lg border-r`}>
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <MapPin className="w-4 h-4 text-gray-500" />
-                              <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Home</span>
+                    {/* Teams and Score Card */}
+                    <div className="flex items-center justify-center">
+                      <div className="flex items-center w-full max-w-2xl">
+                        {/* Home Team */}
+                        <div className={`flex-1 text-center p-4 ${
+                          winner === 'home' 
+                            ? (isHomeTeam ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200')
+                            : 'bg-gray-50'
+                        } rounded-l-lg border-r`}>
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                            <MapPin className="w-4 h-4 text-gray-500" />
+                            <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Home</span>
+                          </div>
+                          <h3 className="text-lg font-bold font-heading text-gray-900 mb-1">
+                            {homeTeamName}
+                          </h3>
+                          {isGameCompleted(game) && (
+                            <div className="text-3xl font-bold font-body text-gray-900">
+                              {game.homeScore}
                             </div>
-                            <h3 className="text-lg font-bold font-heading text-gray-900 mb-1">
-                              {homeTeamName}
-                            </h3>
-                            {isGameCompleted(game) && (
-                              <div className="text-3xl font-bold font-body text-gray-900">
-                                {game.homeScore}
-                              </div>
-                            )}
-                          </div>
+                          )}
+                        </div>
 
-                          {/* VS or Score Separator */}
-                          <div className="px-4 py-6 bg-white border-t border-b border-gray-200">
-                            {isGameCompleted(game) ? (
-                              <div className="text-center">
-                                <div className="text-xs text-gray-500 font-body uppercase tracking-wide mb-1">Final</div>
-                                {winner === 'tie' && (
-                                  <div className="text-xs text-gray-600 font-body">Tie Game</div>
-                                )}
-                              </div>
-                            ) : (
-                              <div className="text-xl font-bold text-gray-400 font-body">VS</div>
-                            )}
-                          </div>
-
-                          {/* Away Team */}
-                          <div className={`flex-1 text-center p-4 ${
-                            winner === 'away' ? 'bg-green-50 border-2 border-green-200' : 'bg-gray-50'
-                          } rounded-r-lg border-l`}>
-                            <div className="flex items-center justify-center gap-2 mb-2">
-                              <Users className="w-4 h-4 text-gray-500" />
-                              <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Away</span>
+                        {/* VS or Score Separator */}
+                        <div className="px-4 py-6 bg-white border-t border-b border-gray-200">
+                          {isGameCompleted(game) ? (
+                            <div className="text-center">
+                              <div className="text-xs text-gray-500 font-body uppercase tracking-wide mb-1">Final</div>
+                              {winner === 'tie' && (
+                                <div className="text-xs text-gray-600 font-body">Tie Game</div>
+                              )}
                             </div>
-                            <h3 className="text-lg font-bold font-heading text-gray-900 mb-1">
-                              {awayTeamName}
-                            </h3>
-                            {isGameCompleted(game) && (
-                              <div className="text-3xl font-bold font-body text-gray-900">
-                                {game.awayScore}
-                              </div>
-                            )}
+                          ) : (
+                            <div className="text-xl font-bold text-gray-400 font-body">VS</div>
+                          )}
+                        </div>
+
+                        {/* Away Team */}
+                        <div className={`flex-1 text-center p-4 ${
+                          winner === 'away' 
+                            ? (!isHomeTeam ? 'bg-green-50 border-2 border-green-200' : 'bg-red-50 border-2 border-red-200')
+                            : 'bg-gray-50'
+                        } rounded-r-lg border-l`}>
+                          <div className="flex items-center justify-center gap-2 mb-2">
+                            <Users className="w-4 h-4 text-gray-500" />
+                            <span className="text-xs text-gray-500 font-body uppercase tracking-wide">Away</span>
                           </div>
+                          <h3 className="text-lg font-bold font-heading text-gray-900 mb-1">
+                            {awayTeamName}
+                          </h3>
+                          {isGameCompleted(game) && (
+                            <div className="text-3xl font-bold font-body text-gray-900">
+                              {game.awayScore}
+                            </div>
+                          )}
                         </div>
                       </div>
+                    </div>
 
-                      {/* Winner Badge */}
-                      {winner && winner !== 'tie' && (
-                        <div className="flex items-center justify-center mt-4">
-                          <div className="flex items-center gap-2 px-3 py-1 bg-green-100 text-green-800 rounded-full text-sm font-medium font-body">
-                            <Trophy className="w-4 h-4" />
-                            <span>
-                              {winner === 'home' ? homeTeamName : awayTeamName} Wins!
-                            </span>
-                          </div>
+                    {/* Winner Badge */}
+                    {winner && winner !== 'tie' && (
+                      <div className="flex items-center justify-center mt-4">
+                        <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium font-body ${
+                          ourTeamWon 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          <Trophy className="w-4 h-4" />
+                          <span>
+                            {winner === 'home' ? homeTeamName : awayTeamName} Wins!
+                          </span>
                         </div>
-                      )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            }
+
+            return (
+              <div className="space-y-6">
+                {/* Upcoming Games Section */}
+                {upcoming.length > 0 && (
+                  <div>
+                    <h2 className="text-lg font-semibold font-heading text-gray-900 mb-4 flex items-center gap-2">
+                      <Calendar className="w-5 h-5 text-blue-600" />
+                      Upcoming Games
+                      <span className="text-sm font-normal text-gray-500">({upcoming.length})</span>
+                    </h2>
+                    <div className="space-y-4">
+                      {upcoming.map(renderGame)}
                     </div>
                   </div>
-                )
-                })}
+                )}
+
+                {/* Divider between upcoming and previous games */}
+                {upcoming.length > 0 && previous.length > 0 && (
+                  <div className="relative py-6">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200" />
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                      <span className="px-4 bg-gray-50 text-gray-500 font-medium">Previous Games</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Previous Games Section */}
+                {previous.length > 0 && (
+                  <div>
+                    {upcoming.length === 0 && (
+                      <h2 className="text-lg font-semibold font-heading text-gray-900 mb-4 flex items-center gap-2">
+                        <Trophy className="w-5 h-5 text-green-600" />
+                        Previous Games
+                        <span className="text-sm font-normal text-gray-500">({previous.length})</span>
+                      </h2>
+                    )}
+                    <div className="space-y-4">
+                      {previous.map(renderGame)}
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })()}

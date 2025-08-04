@@ -103,33 +103,6 @@ class ApiClient {
     return this.request(`/profiles/${id}`);
   }
 
-  // Workout endpoints
-  async getWorkouts(limit = 20, offset = 0) {
-    return this.request(`/workouts?limit=${limit}&offset=${offset}`);
-  }
-
-  async getWorkoutsByUserId(userId: string, limit = 20, offset = 0) {
-    return this.request(`/workouts/user/${userId}?limit=${limit}&offset=${offset}`);
-  }
-
-  async createWorkout(workout: any) {
-    return this.request('/workouts', {
-      method: 'POST',
-      body: JSON.stringify(workout),
-    });
-  }
-
-  async getWorkoutById(id: string) {
-    return this.request(`/workouts/${id}`);
-  }
-
-  async deleteWorkout(id: string) {
-    return this.request(`/workouts/${id}`, { method: 'DELETE' });
-  }
-
-  async getWorkoutStats() {
-    return this.request('/workouts/stats/summary');
-  }
 
   // Post endpoints
   async getFeed(limit = 20, offset = 0) {
@@ -218,9 +191,6 @@ class ApiClient {
   }
 
   // Admin endpoints
-  async getAllWorkouts() {
-    return this.request('/workouts/admin/all');
-  }
 
   async getAllProfiles() {
     return this.request('/profiles/admin/all');
@@ -255,45 +225,7 @@ class ApiClient {
     });
   }
 
-  // Team endpoints
-  async getUserTeams() {
-    return this.request('/chat/teams');
-  }
 
-  // Team management endpoints (admin only)
-  async getAllTeamsAdmin() {
-    return this.request('/chat/admin/teams');
-  }
-
-  async getTeamMembers(teamId: string) {
-    return this.request(`/chat/teams/${teamId}/members`);
-  }
-
-  async addTeamMember(teamId: string, userId: string, role: string = 'member') {
-    return this.request(`/chat/admin/teams/${teamId}/members`, {
-      method: 'POST',
-      body: JSON.stringify({ userId, role }),
-    });
-  }
-
-  async removeTeamMember(teamId: string, memberId: string) {
-    return this.request(`/chat/admin/teams/${teamId}/members/${memberId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async deleteTeam(teamId: string) {
-    return this.request(`/chat/admin/teams/${teamId}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async createTeam(name: string, description?: string) {
-    return this.request('/chat/teams', {
-      method: 'POST',
-      body: JSON.stringify({ name, description }),
-    });
-  }
 
   // Invite endpoints
   async createInviteCode(inviteData: { code: string; maxUses?: number; expiresAt?: Date }) {
@@ -395,6 +327,20 @@ class ApiClient {
       body: JSON.stringify({ name, jerseyNumber, isStarter, notes }),
     });
   }
+  async removePlayerFromGame(gameId: string, playerId: string) {
+    return this.request(`/games/${gameId}/players/${playerId}`, {
+      method: 'DELETE',
+    });
+  }
+  async bulkAddPlayersToGame(gameId: string, players: Array<{id: string, name?: string}>) {
+    return this.request(`/games/${gameId}/players/bulk`, {
+      method: 'POST',
+      body: JSON.stringify({ players }),
+    });
+  }
+  async searchAllPlayers(query: string) {
+    return this.request(`/games/players/search?q=${encodeURIComponent(query)}`);
+  }
 
   async searchManualPlayers(query: string) {
     return this.request(`/games/manual-players/search?q=${encodeURIComponent(query)}`);
@@ -414,6 +360,24 @@ class ApiClient {
   async unlinkManualPlayer(manualPlayerId: string) {
     return this.request(`/games/admin/manual-players/${manualPlayerId}/unlink`, {
       method: 'PATCH',
+    });
+  }
+
+  async migrateManualPlayer(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/migrate`, {
+      method: 'POST',
+    });
+  }
+
+  async deleteMigratedManualPlayer(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/delete-migrated`, {
+      method: 'DELETE',
+    });
+  }
+
+  async forceDeleteManualPlayer(manualPlayerId: string) {
+    return this.request(`/games/admin/manual-players/${manualPlayerId}/force-delete`, {
+      method: 'DELETE',
     });
   }
 
@@ -439,6 +403,12 @@ class ApiClient {
   // Game Activities endpoint
   async getGameActivities(gameId: string) {
     return this.request(`/games/${gameId}/activities`);
+  }
+
+  // Teams endpoints (placeholder - not implemented yet)
+  async getAllTeamsAdmin() {
+    // Return empty array for now since teams functionality isn't implemented
+    return { data: [], error: undefined };
   }
 
   // AI Chat endpoint with tool calling and streaming support

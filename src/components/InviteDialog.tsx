@@ -13,13 +13,20 @@ export function InviteDialog({ isOpen, onClose }: InviteDialogProps) {
   const [loading, setLoading] = useState(false)
   const [inviteLink, setInviteLink] = useState('')
   const [copied, setCopied] = useState(false)
+  const [useCustomCode, setUseCustomCode] = useState(false)
+  const [customCode, setCustomCode] = useState('')
 
   const generateInviteLink = async () => {
     try {
       setLoading(true)
       
-      // Generate a random invite code
-      const code = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+      // Use custom code if provided, otherwise generate random
+      let code: string
+      if (useCustomCode && customCode.trim()) {
+        code = customCode.trim().replace(/\s+/g, '-').toUpperCase()
+      } else {
+        code = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+      }
       
       const { data, error } = await api.createInviteCode({
         code,
@@ -42,7 +49,11 @@ export function InviteDialog({ isOpen, onClose }: InviteDialogProps) {
       toast.success('Invite link generated!')
     } catch (error: any) {
       console.error('Error generating invite link:', error)
-      toast.error(error.message || 'Failed to generate invite link')
+      if (error.message?.includes('already exists') || error.message?.includes('duplicate')) {
+        toast.error('This invite code already exists. Please try a different one.')
+      } else {
+        toast.error(error.message || 'Failed to generate invite link')
+      }
     } finally {
       setLoading(false)
     }
@@ -65,6 +76,8 @@ export function InviteDialog({ isOpen, onClose }: InviteDialogProps) {
   const handleClose = () => {
     setInviteLink('')
     setCopied(false)
+    setUseCustomCode(false)
+    setCustomCode('')
     onClose()
   }
 
@@ -138,9 +151,38 @@ export function InviteDialog({ isOpen, onClose }: InviteDialogProps) {
               <p className="text-text-secondary mb-6">
                 Create a secure invite link to share with others. They'll be able to join the app using this link.
               </p>
+              
+              {/* Custom Code Option */}
+              <div className="mb-6">
+                <label className="flex items-center gap-2 text-sm text-text-primary mb-3">
+                  <input
+                    type="checkbox"
+                    checked={useCustomCode}
+                    onChange={(e) => setUseCustomCode(e.target.checked)}
+                    className="rounded border-border-primary text-primary-600 focus:ring-primary-500"
+                  />
+                  Use custom invite code
+                </label>
+                
+                {useCustomCode && (
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      value={customCode}
+                      onChange={(e) => setCustomCode(e.target.value)}
+                      placeholder="Enter custom code (e.g., FAMILY2024)"
+                      className="w-full px-3 py-2 border border-border-primary rounded-lg bg-bg-primary text-text-primary placeholder-text-secondary focus:outline-none focus:ring-2 focus:ring-primary-500 text-center font-mono"
+                    />
+                    <p className="text-xs text-text-secondary mt-1 text-center">
+                      Spaces will be replaced with dashes and converted to uppercase
+                    </p>
+                  </div>
+                )}
+              </div>
+              
               <button
                 onClick={generateInviteLink}
-                disabled={loading}
+                disabled={loading || (useCustomCode && !customCode.trim())}
                 className="w-full bg-primary-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 {loading ? 'Generating...' : 'Generate Invite Link'}

@@ -1,7 +1,7 @@
 import express from 'express';
-import { eq, and, or, desc, asc, isNull, ilike, ne, sql } from 'drizzle-orm';
+import { eq, desc, gte, lte, and, like } from 'drizzle-orm';
 import { db } from '../db/index';
-import { teams, teamMembers, chatMessages, user, workouts, posts, games } from '../db/schema';
+import { workouts, user, posts, games, gamePlayers, gameStats, manualPlayers } from '../db/schema';
 import { requireAuth, AuthenticatedRequest } from '../middleware/auth';
 import { z } from 'zod';
 import { createOpenAI } from '@ai-sdk/openai';
@@ -68,6 +68,32 @@ const tools = {
       notes: z.string().optional().describe('Optional notes about the game'),
     }),
   },
+  listGames: {
+    description: 'List all basketball games in the system. Shows game details including teams, dates, scores, and status. Can filter by opponent team name.',
+    parameters: z.object({
+      limit: z.number().optional().describe('Maximum number of games to return (default: 20)'),
+      status: z.enum(['upcoming', 'live', 'completed', 'all']).optional().describe('Filter games by status (default: all)'),
+      dateFilter: z.enum(['today', 'tomorrow', 'this_week', 'all']).optional().describe('Filter games by date (default: all)'),
+      searchOpponentTeam: z.string().optional().describe('Filter games by opponent team name (partial match supported)'),
+    }),
+  },
+  listPlayersInGame: {
+    description: 'List all players participating in a specific basketball game. Shows both registered users and manual players.',
+    parameters: z.object({
+      gameId: z.string().describe('The UUID of the game to list players for'),
+    }),
+  },
+  addStatsToPlayer: {
+    description: 'Add statistical data to a player in a specific game. Can add points (2pt, 3pt, 1pt), steals, rebounds, etc.',
+    parameters: z.object({
+      gameId: z.string().describe('The UUID of the game'),
+      gamePlayerId: z.string().describe('The UUID of the game player (from listPlayersInGame)'),
+      statType: z.enum(['2pt', '3pt', '1pt', 'steal', 'rebound', 'assist', 'block', 'turnover']).describe('Type of statistic to add'),
+      value: z.number().optional().describe('Value of the statistic (default: 1)'),
+      quarter: z.number().optional().describe('Quarter/period when stat occurred (1-4)'),
+      timeMinute: z.number().optional().describe('Minute mark when stat occurred (0-12 for each quarter)'),
+    }),
+  },
 };
 
 // Configure multer for file uploads
@@ -80,559 +106,11 @@ const upload = multer({
 
 const router = express.Router();
 
-// Validation schemas
-const createTeamSchema = z.object({
-  name: z.string().min(1).max(255),
-  description: z.string().optional(),
-});
-
-const sendMessageSchema = z.object({
-  content: z.string().min(1).max(1000),
-  teamId: z.string().uuid().optional(),
-  recipientId: z.string().optional(),
-});
-
-const joinTeamSchema = z.object({
-  teamId: z.string().uuid(),
-});
-
-// Get all teams for the current user
-router.get('/teams', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    
-    const userTeams = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        description: teams.description,
-        createdBy: teams.createdBy,
-        createdAt: teams.createdAt,
-        role: teamMembers.role,
-      })
-      .from(teams)
-      .innerJoin(teamMembers, eq(teams.id, teamMembers.teamId))
-      .where(eq(teamMembers.userId, userId))
-      .orderBy(asc(teams.name));
-
-    res.json(userTeams);
-  } catch (error) {
-    console.error('Error fetching user teams:', error);
-    res.status(500).json({ error: 'Failed to fetch teams' });
-  }
-});
-
-// Create a new team
-router.post('/teams', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const { name, description } = createTeamSchema.parse(req.body);
-
-    const [newTeam] = await db
-      .insert(teams)
-      .values({
-        name,
-        description,
-        createdBy: userId,
-      })
-      .returning();
-
-    // Add creator as admin member
-    await db.insert(teamMembers).values({
-      teamId: newTeam.id,
-      userId,
-      role: 'admin',
-    });
-
-    res.json(newTeam);
-  } catch (error) {
-    console.error('Error creating team:', error);
-    res.status(500).json({ error: 'Failed to create team' });
-  }
-});
-
-// Join a team
-router.post('/teams/join', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const { teamId } = joinTeamSchema.parse(req.body);
-
-    // Check if user is already a member
-    const existingMembership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .limit(1);
-
-    if (existingMembership.length > 0) {
-      return res.status(400).json({ error: 'Already a member of this team' });
-    }
-
-    // Add user to team
-    await db.insert(teamMembers).values({
-      teamId,
-      userId,
-      role: 'member',
-    });
-
-    res.json({ message: 'Successfully joined team' });
-  } catch (error) {
-    console.error('Error joining team:', error);
-    res.status(500).json({ error: 'Failed to join team' });
-  }
-});
-
-// Get team messages
-router.get('/teams/:teamId/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const teamId = req.params.teamId;
-
-    // Verify user is a member of this team
-    const membership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .limit(1);
-
-    if (membership.length === 0) {
-      return res.status(403).json({ error: 'Not a member of this team' });
-    }
-
-    // Get messages with sender info (limit to last 50 for performance)
-    const messages = await db
-      .select({
-        id: chatMessages.id,
-        content: chatMessages.content,
-        messageType: chatMessages.messageType,
-        createdAt: chatMessages.createdAt,
-        senderId: chatMessages.senderId,
-        senderName: user.name,
-        senderAvatar: user.avatarUrl,
-      })
-      .from(chatMessages)
-      .innerJoin(user, eq(chatMessages.senderId, user.id))
-      .where(eq(chatMessages.teamId, teamId))
-      .orderBy(asc(chatMessages.createdAt))
-      .limit(50);
-
-    res.json(messages);
-  } catch (error) {
-    console.error('Error fetching team messages:', error);
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
-
-// Get team members (for team members)
-router.get('/teams/:teamId/members', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const teamId = req.params.teamId;
-
-    // Verify user is a member of this team
-    const membership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .limit(1);
-
-    if (membership.length === 0) {
-      return res.status(403).json({ error: 'Not a member of this team' });
-    }
-
-    // Get all team members with user info
-    const members = await db
-      .select({
-        id: teamMembers.id,
-        userId: teamMembers.userId,
-        role: teamMembers.role,
-        joinedAt: teamMembers.joinedAt,
-        userName: user.name,
-        userEmail: user.email,
-        userAvatar: user.avatarUrl,
-        userRole: user.role,
-      })
-      .from(teamMembers)
-      .innerJoin(user, eq(teamMembers.userId, user.id))
-      .where(eq(teamMembers.teamId, teamId))
-      .orderBy(asc(user.name));
-
-    res.json(members);
-  } catch (error) {
-    console.error('Error fetching team members:', error);
-    res.status(500).json({ error: 'Failed to fetch team members' });
-  }
-});
-
-// Get DM history with a specific user
-router.get('/messages/dm/:otherUserId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const otherUserId = req.params.otherUserId;
-
-    // Get DM messages between these two users (unlimited history)
-    const messages = await db
-      .select({
-        id: chatMessages.id,
-        content: chatMessages.content,
-        messageType: chatMessages.messageType,
-        createdAt: chatMessages.createdAt,
-        senderId: chatMessages.senderId,
-        recipientId: chatMessages.recipientId,
-        senderName: user.name,
-        senderAvatar: user.avatarUrl,
-      })
-      .from(chatMessages)
-      .innerJoin(user, eq(chatMessages.senderId, user.id))
-      .where(
-        and(
-          isNull(chatMessages.teamId), // DMs have null teamId
-          or(
-            and(eq(chatMessages.senderId, userId), eq(chatMessages.recipientId, otherUserId)),
-            and(eq(chatMessages.senderId, otherUserId), eq(chatMessages.recipientId, userId))
-          )
-        )
-      )
-      .orderBy(asc(chatMessages.createdAt));
-
-    res.json(messages);
-  } catch (error) {
-    console.error('Error fetching DM messages:', error);
-    res.status(500).json({ error: 'Failed to fetch messages' });
-  }
-});
-
-// Send a message (team or DM)
-router.post('/messages', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-    const { content, teamId, recipientId } = sendMessageSchema.parse(req.body);
-
-    if (!teamId && !recipientId) {
-      return res.status(400).json({ error: 'Must specify either teamId or recipientId' });
-    }
-
-    if (teamId && recipientId) {
-      return res.status(400).json({ error: 'Cannot specify both teamId and recipientId' });
-    }
-
-    // If team message, verify membership
-    if (teamId) {
-      const membership = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-        .limit(1);
-
-      if (membership.length === 0) {
-        return res.status(403).json({ error: 'Not a member of this team' });
-      }
-    }
-
-    // Save message to database
-    const [newMessage] = await db
-      .insert(chatMessages)
-      .values({
-        senderId: userId,
-        teamId: teamId || null,
-        recipientId: recipientId || null,
-        content,
-        messageType: 'text',
-      })
-      .returning();
-
-    // Get sender info for response
-    const [sender] = await db
-      .select({ name: user.name, avatarUrl: user.avatarUrl })
-      .from(user)
-      .where(eq(user.id, userId));
-
-    const messageWithSender = {
-      ...newMessage,
-      senderName: sender.name,
-      senderAvatar: sender.avatarUrl,
-    };
-
-    res.json(messageWithSender);
-  } catch (error) {
-    console.error('Error sending message:', error);
-    res.status(500).json({ error: 'Failed to send message' });
-  }
-});
-
-// Search users for DM
-// Get DM conversations for the current user with last message preview
-router.get('/conversations', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const userId = req.user!.id;
-
-    // Get all DM messages for this user
-    const dmMessages = await db
-      .select({
-        messageId: chatMessages.id,
-        senderId: chatMessages.senderId,
-        recipientId: chatMessages.recipientId,
-        content: chatMessages.content,
-        createdAt: chatMessages.createdAt,
-        senderName: user.name,
-      })
-      .from(chatMessages)
-      .innerJoin(user, eq(chatMessages.senderId, user.id))
-      .where(
-        and(
-          isNull(chatMessages.teamId), // DMs only
-          or(
-            eq(chatMessages.senderId, userId),
-            eq(chatMessages.recipientId, userId)
-          )
-        )
-      )
-      .orderBy(desc(chatMessages.createdAt));
-
-    // Process messages to get unique conversations with last message
-    const conversationMap = new Map();
-    
-    for (const message of dmMessages) {
-      const otherUserId = message.senderId === userId ? message.recipientId : message.senderId;
-      
-      if (!conversationMap.has(otherUserId)) {
-        conversationMap.set(otherUserId, {
-          otherUserId,
-          lastMessage: message,
-        });
-      }
-    }
-
-    // Get user details for each conversation
-    const conversationIds = Array.from(conversationMap.keys());
-    if (conversationIds.length === 0) {
-      return res.json([]);
-    }
-
-    const conversationUsers = await db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-      })
-      .from(user)
-      .where(or(...conversationIds.map(id => eq(user.id, id))));
-
-    // Combine user data with last message
-    const conversations = conversationUsers.map(user => {
-      const conversation = conversationMap.get(user.id);
-      const lastMessage = conversation.lastMessage;
-      
-      return {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-        lastMessageContent: lastMessage.content,
-        lastMessageSenderName: lastMessage.senderId === userId ? 'You' : lastMessage.senderName,
-        lastMessageTime: lastMessage.createdAt,
-      };
-    });
-
-    // Sort by most recent message
-    conversations.sort((a, b) => new Date(b.lastMessageTime).getTime() - new Date(a.lastMessageTime).getTime());
-
-    res.json(conversations);
-  } catch (error) {
-    console.error('Error fetching DM conversations:', error);
-    res.status(500).json({ error: 'Failed to fetch conversations' });
-  }
-});
-
-router.get('/users/search', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    const query = req.query.q as string;
-    
-    if (!query || query.length < 3) {
-      return res.json([]);
-    }
-
-    const users = await db
-      .select({
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        avatarUrl: user.avatarUrl,
-      })
-      .from(user)
-      .where(
-        or(
-          ilike(user.name, `%${query}%`),
-          ilike(user.email, `%${query}%`)
-        )
-      )
-      .limit(10);
-
-    res.json(users);
-  } catch (error) {
-    console.error('Error searching users:', error);
-    res.status(500).json({ error: 'Failed to search users' });
-  }
-});
-
-// Admin endpoints for team management
-router.get('/admin/teams', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    // Check if user is admin (you might want to add proper admin middleware)
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const allTeams = await db
-      .select({
-        id: teams.id,
-        name: teams.name,
-        description: teams.description,
-        createdBy: teams.createdBy,
-        createdAt: teams.createdAt,
-        memberCount: teamMembers.id, // Will be aggregated
-      })
-      .from(teams)
-      .leftJoin(teamMembers, eq(teams.id, teamMembers.teamId))
-      .orderBy(asc(teams.name));
-
-    // Group by team and count members
-    const teamsWithCounts = allTeams.reduce((acc, team) => {
-      const existing = acc.find(t => t.id === team.id);
-      if (existing) {
-        existing.memberCount += 1;
-      } else {
-        acc.push({
-          id: team.id,
-          name: team.name,
-          description: team.description,
-          createdBy: team.createdBy,
-          createdAt: team.createdAt,
-          memberCount: team.memberCount ? 1 : 0,
-        });
-      }
-      return acc;
-    }, [] as any[]);
-
-    res.json(teamsWithCounts);
-  } catch (error) {
-    console.error('Error fetching admin teams:', error);
-    res.status(500).json({ error: 'Failed to fetch teams' });
-  }
-});
-
-router.get('/admin/teams/:teamId/members', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const teamId = req.params.teamId;
-    const members = await db
-      .select({
-        id: teamMembers.id,
-        userId: teamMembers.userId,
-        role: teamMembers.role,
-        joinedAt: teamMembers.joinedAt,
-        userName: user.name,
-        userEmail: user.email,
-        userAvatar: user.avatarUrl,
-        userRole: user.role,
-      })
-      .from(teamMembers)
-      .innerJoin(user, eq(teamMembers.userId, user.id))
-      .where(eq(teamMembers.teamId, teamId))
-      .orderBy(asc(user.name));
-
-    res.json(members);
-  } catch (error) {
-    console.error('Error fetching team members:', error);
-    res.status(500).json({ error: 'Failed to fetch team members' });
-  }
-});
-
-router.post('/admin/teams/:teamId/members', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const teamId = req.params.teamId;
-    const { userId, role = 'member' } = req.body;
-
-    // Check if user is already a member
-    const existingMembership = await db
-      .select()
-      .from(teamMembers)
-      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)))
-      .limit(1);
-
-    if (existingMembership.length > 0) {
-      return res.status(400).json({ error: 'User is already a member of this team' });
-    }
-
-    await db.insert(teamMembers).values({
-      teamId,
-      userId,
-      role,
-    });
-
-    res.json({ message: 'User added to team successfully' });
-  } catch (error) {
-    console.error('Error adding team member:', error);
-    res.status(500).json({ error: 'Failed to add team member' });
-  }
-});
-
-router.delete('/admin/teams/:teamId/members/:memberId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const memberId = req.params.memberId;
-
-    await db
-      .delete(teamMembers)
-      .where(eq(teamMembers.id, memberId));
-
-    res.json({ message: 'User removed from team successfully' });
-  } catch (error) {
-    console.error('Error removing team member:', error);
-    res.status(500).json({ error: 'Failed to remove team member' });
-  }
-});
-
-router.delete('/admin/teams/:teamId', requireAuth, async (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.user!.email !== 'codydearkland@gmail.com') {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    const teamId = req.params.teamId;
-
-    // Delete team members first (foreign key constraint)
-    await db.delete(teamMembers).where(eq(teamMembers.teamId, teamId));
-    
-    // Delete chat messages
-    await db.delete(chatMessages).where(eq(chatMessages.teamId, teamId));
-    
-    // Delete team
-    await db.delete(teams).where(eq(teams.id, teamId));
-
-    res.json({ message: 'Team deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting team:', error);
-    res.status(500).json({ error: 'Failed to delete team' });
-  }
-});
-
 // AI Chat endpoint with tool calling - Admin only
 router.post('/ai', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     // Check if user is admin
-    if (req.user!.role !== 'admin') {
+    if (!req.user!.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
@@ -643,24 +121,9 @@ router.post('/ai', requireAuth, async (req: AuthenticatedRequest, res) => {
     }
 
     // Get recent data for context
-    const [recentGames, recentWorkouts, recentPosts, userStats] = await Promise.all([
+    const [recentGames, recentPosts, userStats] = await Promise.all([
       // Recent games
       db.select().from(games).orderBy(desc(games.createdAt)).limit(10),
-      
-      // Recent workouts
-      db.select({
-        id: workouts.id,
-        userId: workouts.userId,
-        type: workouts.exerciseType,
-        duration: workouts.durationMinutes,
-        points: workouts.pointsEarned,
-        createdAt: workouts.createdAt,
-        userName: user.name
-      })
-      .from(workouts)
-      .innerJoin(user, eq(workouts.userId, user.id))
-      .orderBy(desc(workouts.createdAt))
-      .limit(20),
       
       // Recent posts
       db.select({
@@ -699,13 +162,6 @@ router.post('/ai', requireAuth, async (req: AuthenticatedRequest, res) => {
         date: game.gameDate,
         status: game.status
       })),
-      recentWorkouts: recentWorkouts.map(workout => ({
-        type: workout.type,
-        duration: workout.duration,
-        points: workout.points,
-        user: workout.userName,
-        date: workout.createdAt
-      })),
       recentPosts: recentPosts.map(post => ({
         content: post.content,
         user: post.userName,
@@ -721,8 +177,25 @@ router.post('/ai', requireAuth, async (req: AuthenticatedRequest, res) => {
 
     const systemPrompt = `You are an AI assistant for Girls Got Game, a basketball training app. You can:
 
-1. Answer questions about app data (games, workouts, users, stats)
+1. Answer questions about app data (games, users, stats)
 2. Help create new basketball games using the createGame tool
+3. List all games in the system using the listGames tool
+4. List players in a specific game using the listPlayersInGame tool
+5. Add statistics to players in games using the addStatsToPlayer tool
+
+CRITICAL TOOL USAGE RULES:
+- When user asks about "games today", "upcoming games", "list games" → ALWAYS use listGames tool
+- When user mentions team name like "Lakers game", "vs Warriors" → use listGames with searchOpponentTeam
+- When user asks about "players in [team] game" → use listGames first to find the game, then inform user to ask for players with the Game ID
+- When user wants to "add stats" or record statistics → use addStatsToPlayer tool if you have Game ID and Player ID
+- For natural language stat recording → guide user through steps: find game → find player → add stat
+- DO NOT use the context data for game information - ALWAYS call the appropriate tool
+- The context data is outdated - tools provide current, detailed information
+
+MULTI-STEP WORKFLOW GUIDANCE:
+- If user asks "players in Lakers game" → call listGames with searchOpponentTeam: 'Lakers' and then tell user the Game ID and ask them to request players for that specific game
+- If user says "John scored against Lakers" → first call listGames to find Lakers game, then guide user to next step
+- Break complex requests into steps and guide the user through each one
 
 CRITICAL RULES FOR GAME CREATION:
 
@@ -754,6 +227,44 @@ TOOL CALLING RULES:
 - If ANY required info is missing, ask specific questions. Do NOT guess or assume.
 - When you have complete info, call the tool immediately without additional explanation
 
+GAME MANAGEMENT TOOLS:
+- ALWAYS use listGames when user asks about games (today, upcoming, all games, etc.)
+- ALWAYS use listPlayersInGame when user asks about players in a specific game
+- ALWAYS use addStatsToPlayer when user wants to add statistics to a player
+- Include Game IDs and Player IDs in responses for future reference
+- Show team names clearly so users can identify which games to work with
+
+NATURAL LANGUAGE PATTERNS & TOOL CHAINING:
+
+GAME QUERIES:
+- "games today" → listGames with dateFilter: 'today'
+- "games against Lakers" → listGames with searchOpponentTeam: 'Lakers'
+- "players in the Lakers game" → listGames with searchOpponentTeam: 'Lakers' → get gameId → listPlayersInGame
+- "show players vs Warriors" → listGames with searchOpponentTeam: 'Warriors' → listPlayersInGame
+
+STAT RECORDING PATTERNS:
+- "{player} scored {X} points against {team}" → find game vs {team} → find {player} → addStatsToPlayer with '2pt' or '3pt'
+- "{player} made a 3pt against {team}" → find game vs {team} → find {player} → addStatsToPlayer with '3pt'
+- "{player} rebounded against {team}" → find game vs {team} → find {player} → addStatsToPlayer with 'rebound' 
+- "{player} stole against {team}" → find game vs {team} → find {player} → addStatsToPlayer with 'steal'
+- "{player} made a freethrow vs {team}" → find game vs {team} → find {player} → addStatsToPlayer with '1pt'
+
+STAT TYPE MAPPING:
+- "scored X points", "scored X" → determine '2pt' or '3pt' based on context/points
+- "3pt", "three pointer", "made a 3" → '3pt'
+- "freethrow", "free throw", "foul shot" → '1pt'
+- "rebound", "rebounded" → 'rebound'
+- "steal", "stole" → 'steal'
+- "assist" → 'assist'
+- "block", "blocked" → 'block'
+- "turnover" → 'turnover'
+
+TOOL CHAINING WORKFLOW:
+1. When user mentions team name without game ID → call listGames with searchOpponentTeam
+2. When user mentions player + team → find game first, then find player in that game
+3. For stat recording → chain: find game → find player → add stat
+4. Always show intermediate results to user (game found, player found, stat added)
+
 Recent Data Context:
 ${JSON.stringify(context, null, 2)}
 
@@ -769,50 +280,305 @@ Be precise about team identification and only create games when you have complet
         maxToolRoundtrips: 5, // Reduced from 25 to avoid infinite loops
         schema: z.object({
           response: z.string().describe('The response to send to the user'),
-          shouldCreateGame: z.boolean().describe('Whether a game should be created based on the conversation'),
-          gameDetails: z.object({
-            teamName: z.string(),
-            opponentTeam: z.string(),
-            gameDate: z.string(),
-            isHome: z.boolean(),
-            notes: z.string().optional()
-          }).optional().describe('Game creation details if shouldCreateGame is true')
+          toolAction: z.enum(['none', 'createGame', 'listGames', 'listPlayersInGame', 'addStatsToPlayer']).describe('Which tool action to perform'),
+          toolParams: z.object({
+            // Game creation params
+            teamName: z.string().optional(),
+            opponentTeam: z.string().optional(),
+            gameDate: z.string().optional(),
+            isHome: z.boolean().optional(),
+            notes: z.string().optional(),
+            // List games params
+            limit: z.number().optional(),
+            status: z.enum(['upcoming', 'live', 'completed', 'all']).optional(),
+            dateFilter: z.enum(['today', 'tomorrow', 'this_week', 'all']).optional(),
+            searchOpponentTeam: z.string().optional(),
+            // List players params
+            gameId: z.string().optional(),
+            // Add stats params
+            gamePlayerId: z.string().optional(),
+            statType: z.enum(['2pt', '3pt', '1pt', 'steal', 'rebound', 'assist', 'block', 'turnover']).optional(),
+            value: z.number().optional(),
+            quarter: z.number().optional(),
+            timeMinute: z.number().optional(),
+          }).optional().describe('Parameters for the tool action')
         }),
       });
 
       console.log('AI result:', result.object);
 
-      // Check if we should create a game based on AI decision
-      if (result.object.shouldCreateGame && result.object.gameDetails) {
-        const params = result.object.gameDetails;
-        console.log('Creating game with params:', params);
+      // Handle tool actions
+      if (result.object.toolAction && result.object.toolAction !== 'none' && result.object.toolParams) {
+        const action = result.object.toolAction;
+        const params = result.object.toolParams;
+        
         try {
-          const [newGame] = await db
-            .insert(games)
-            .values({
-              teamName: params.teamName,
-              isHome: params.isHome,
-              opponentTeam: params.opponentTeam,
-              gameDate: new Date(params.gameDate),
-              notes: params.notes || null,
-            })
-            .returning();
+          switch (action) {
+            case 'createGame': {
+              if (!params.teamName || !params.opponentTeam || !params.gameDate || params.isHome === undefined) {
+                res.json({
+                  response: '❌ Missing required parameters for game creation. Need teamName, opponentTeam, gameDate, and isHome.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              console.log('Creating game with params:', params);
+              const [newGame] = await db
+                .insert(games)
+                .values({
+                  teamName: params.teamName,
+                  isHome: params.isHome,
+                  opponentTeam: params.opponentTeam,
+                  gameDate: new Date(params.gameDate),
+                  notes: params.notes || null,
+                })
+                .returning();
 
-          const gameDateTime = new Date(params.gameDate);
-          const formattedDate = gameDateTime.toLocaleDateString();
-          const formattedTime = gameDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          
-          res.json({
-            response: `✅ Game created successfully! ${params.teamName} vs ${params.opponentTeam} on ${formattedDate} at ${formattedTime} (${params.isHome ? 'Home' : 'Away'} game)`,
-            toolUsed: 'createGame',
-            gameId: newGame.id,
-            timestamp: new Date().toISOString()
-          });
-          return;
+              const gameDateTime = new Date(params.gameDate);
+              const formattedDate = gameDateTime.toLocaleDateString();
+              const formattedTime = gameDateTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              
+              res.json({
+                response: `✅ Game created successfully! ${params.teamName} vs ${params.opponentTeam} on ${formattedDate} at ${formattedTime} (${params.isHome ? 'Home' : 'Away'} game)`,
+                toolUsed: 'createGame',
+                gameId: newGame.id,
+                timestamp: new Date().toISOString()
+              });
+              return;
+            }
+            
+            case 'listGames': {
+              const limit = params.limit || 20;
+              const status = params.status || 'all';
+              const dateFilter = params.dateFilter || 'all';
+              const opponentFilter = params.searchOpponentTeam;
+              
+              let query = db.select().from(games);
+              const conditions = [];
+              
+              // Add status filter
+              if (status !== 'all') {
+                conditions.push(eq(games.status, status));
+              }
+              
+              // Add opponent team filter
+              if (opponentFilter) {
+                conditions.push(like(games.opponentTeam, `%${opponentFilter}%`));
+              }
+              
+              // Add date filter
+              if (dateFilter !== 'all') {
+                const now = new Date();
+                const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                
+                switch (dateFilter) {
+                  case 'today': {
+                    const todayEnd = new Date(today);
+                    todayEnd.setDate(todayEnd.getDate() + 1);
+                    conditions.push(gte(games.gameDate, today));
+                    conditions.push(lte(games.gameDate, todayEnd));
+                    break;
+                  }
+                  case 'tomorrow': {
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    const tomorrowEnd = new Date(tomorrow);
+                    tomorrowEnd.setDate(tomorrowEnd.getDate() + 1);
+                    conditions.push(gte(games.gameDate, tomorrow));
+                    conditions.push(lte(games.gameDate, tomorrowEnd));
+                    break;
+                  }
+                  case 'this_week': {
+                    const weekEnd = new Date(today);
+                    weekEnd.setDate(weekEnd.getDate() + 7);
+                    conditions.push(gte(games.gameDate, today));
+                    conditions.push(lte(games.gameDate, weekEnd));
+                    break;
+                  }
+                }
+              }
+              
+              // Apply conditions if any
+              if (conditions.length > 0) {
+                query = query.where(conditions.length === 1 ? conditions[0] : and(...conditions));
+              }
+              
+              const gamesList = await query
+                .orderBy(desc(games.gameDate))
+                .limit(limit);
+              
+              const gamesInfo = gamesList.map(game => {
+                const gameDate = new Date(game.gameDate);
+                const formattedDate = gameDate.toLocaleDateString();
+                const formattedTime = gameDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                return `🏀 **${game.teamName}** vs **${game.opponentTeam}**
+  📍 ${game.isHome ? 'Home Game' : 'Away Game'}
+  📅 ${formattedDate} at ${formattedTime}
+  📊 Status: ${game.status}${game.homeScore !== null ? ` | Final Score: ${game.homeScore}-${game.awayScore}` : ''}
+  🆔 Game ID: \`${game.id}\`${game.notes ? `\n  📝 Notes: ${game.notes}` : ''}`;
+              });
+              
+              const responseText = gamesList.length > 0 
+                ? `📋 **Found ${gamesList.length} games:**\n\n${gamesInfo.join('\n\n')}`
+                : '📋 No games found matching your criteria.';
+              
+              res.json({
+                response: responseText,
+                toolUsed: 'listGames',
+                data: gamesList,
+                timestamp: new Date().toISOString()
+              });
+              return;
+            }
+            
+            case 'listPlayersInGame': {
+              if (!params.gameId) {
+                res.json({
+                  response: '❌ Game ID is required to list players.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              // Get game info first
+              const [gameInfo] = await db.select().from(games).where(eq(games.id, params.gameId));
+              if (!gameInfo) {
+                res.json({
+                  response: '❌ Game not found with that ID.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              // Get players in game with user and manual player details
+              const playersInGame = await db
+                .select({
+                  id: gamePlayers.id,
+                  gameId: gamePlayers.gameId,
+                  userId: gamePlayers.userId,
+                  manualPlayerId: gamePlayers.manualPlayerId,
+                  jerseyNumber: gamePlayers.jerseyNumber,
+                  isStarter: gamePlayers.isStarter,
+                  minutesPlayed: gamePlayers.minutesPlayed,
+                  userName: user.name,
+                  userEmail: user.email,
+                  manualPlayerName: manualPlayers.name,
+                  manualPlayerJersey: manualPlayers.jerseyNumber,
+                })
+                .from(gamePlayers)
+                .leftJoin(user, eq(gamePlayers.userId, user.id))
+                .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+                .where(eq(gamePlayers.gameId, params.gameId));
+              
+              const playersInfo = playersInGame.map(player => {
+                const name = player.userName || player.manualPlayerName || 'Unknown Player';
+                const jersey = player.jerseyNumber || player.manualPlayerJersey || 'No Jersey';
+                const playerType = player.userId ? 'Registered User' : 'Manual Player';
+                const starterStatus = player.isStarter ? '⭐ Starter' : 'Bench';
+                
+                return `• **${name}** (#${jersey})
+  🆔 Player ID: ${player.id}
+  👤 Type: ${playerType}
+  📍 ${starterStatus}
+  ⏱️ Minutes: ${player.minutesPlayed}`;
+              });
+              
+              const responseText = playersInGame.length > 0
+                ? `👥 **Players in ${gameInfo.teamName} vs ${gameInfo.opponentTeam}:**\n\n${playersInfo.join('\n\n')}`
+                : `👥 **No players found for ${gameInfo.teamName} vs ${gameInfo.opponentTeam}**`;
+              
+              res.json({
+                response: responseText,
+                toolUsed: 'listPlayersInGame',
+                data: playersInGame,
+                timestamp: new Date().toISOString()
+              });
+              return;
+            }
+            
+            case 'addStatsToPlayer': {
+              if (!params.gameId || !params.gamePlayerId || !params.statType) {
+                res.json({
+                  response: '❌ Missing required parameters. Need gameId, gamePlayerId, and statType.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              // Verify game exists
+              const [gameInfo] = await db.select().from(games).where(eq(games.id, params.gameId));
+              if (!gameInfo) {
+                res.json({
+                  response: '❌ Game not found with that ID.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              // Verify player exists in game
+              const [playerInfo] = await db
+                .select({
+                  id: gamePlayers.id,
+                  userName: user.name,
+                  manualPlayerName: manualPlayers.name,
+                })
+                .from(gamePlayers)
+                .leftJoin(user, eq(gamePlayers.userId, user.id))
+                .leftJoin(manualPlayers, eq(gamePlayers.manualPlayerId, manualPlayers.id))
+                .where(eq(gamePlayers.id, params.gamePlayerId));
+                
+              if (!playerInfo) {
+                res.json({
+                  response: '❌ Player not found in this game.',
+                  timestamp: new Date().toISOString()
+                });
+                return;
+              }
+              
+              // Add the stat
+              const [newStat] = await db
+                .insert(gameStats)
+                .values({
+                  gameId: params.gameId,
+                  gamePlayerId: params.gamePlayerId,
+                  statType: params.statType,
+                  value: params.value || 1,
+                  quarter: params.quarter || null,
+                  timeMinute: params.timeMinute || null,
+                  createdBy: req.user!.id, // Admin user adding the stat
+                })
+                .returning();
+              
+              const playerName = playerInfo.userName || playerInfo.manualPlayerName || 'Unknown Player';
+              const statDescription = `${params.statType}${params.value && params.value !== 1 ? ` (${params.value})` : ''}`;
+              const timeInfo = params.quarter && params.timeMinute 
+                ? ` in Q${params.quarter} at ${params.timeMinute}:00`
+                : params.quarter 
+                  ? ` in Q${params.quarter}`
+                  : '';
+              
+              res.json({
+                response: `✅ **Stat added successfully!**\n📊 ${playerName}: ${statDescription}${timeInfo}\n🆔 Stat ID: ${newStat.id}`,
+                toolUsed: 'addStatsToPlayer',
+                data: newStat,
+                timestamp: new Date().toISOString()
+              });
+              return;
+            }
+            
+            default:
+              res.json({
+                response: result.object.response,
+                timestamp: new Date().toISOString()
+              });
+              return;
+          }
         } catch (dbError) {
-          console.error('Database error creating game:', dbError);
+          console.error(`Database error for ${action}:`, dbError);
           res.json({
-            response: '❌ Sorry, there was an error creating the game. Please try again.',
+            response: `❌ Sorry, there was an error performing the ${action} operation. Please try again.`,
             error: 'Database error',
             timestamp: new Date().toISOString()
           });
@@ -820,7 +586,7 @@ Be precise about team identification and only create games when you have complet
         }
       }
 
-      // If no game creation, send regular response
+      // If no tool action, send regular response
       res.json({
         response: result.object.response,
         timestamp: new Date().toISOString()
@@ -855,7 +621,7 @@ Be precise about team identification and only create games when you have complet
 router.post('/transcribe', requireAuth, upload.single('audio'), async (req: AuthenticatedRequest, res) => {
   try {
     // Check if user is admin
-    if (req.user!.role !== 'admin') {
+    if (!req.user!.isAdmin) {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

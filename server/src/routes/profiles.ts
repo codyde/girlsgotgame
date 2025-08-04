@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, asc, and } from 'drizzle-orm';
 import { db } from '../db';
 import { user, parentChildRelations } from '../db/schema';
 import { requireAuth, requireAdmin, AuthenticatedRequest } from '../middleware/auth';
@@ -20,6 +20,7 @@ router.get('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: true,
         totalPoints: true,
         role: true,
+        isAdmin: true,
         isOnboarded: true,
         isVerified: true,
         jerseyNumber: true,
@@ -65,6 +66,7 @@ router.post('/', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: user.avatarUrl,
         totalPoints: user.totalPoints,
         role: user.role,
+        isAdmin: user.isAdmin,
         isOnboarded: user.isOnboarded,
         isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
@@ -101,6 +103,7 @@ router.patch('/me', requireAuth, async (req: AuthenticatedRequest, res) => {
         avatarUrl: user.avatarUrl,
         totalPoints: user.totalPoints,
         role: user.role,
+        isAdmin: user.isAdmin,
         isOnboarded: user.isOnboarded,
         isVerified: user.isVerified,
         jerseyNumber: user.jerseyNumber,
@@ -241,7 +244,7 @@ router.get('/admin/all', requireAuth, requireAdmin, async (req: AuthenticatedReq
   try {
 
     const allProfiles = await db.query.user.findMany({
-      orderBy: [desc(user.totalPoints)]
+      orderBy: [asc(user.name)]
     });
 
     res.json(allProfiles);

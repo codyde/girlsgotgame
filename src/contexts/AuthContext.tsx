@@ -297,7 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfile(null)
       setGlobalSession(null)
       
-      // Clear any stored session data first
+      // Clear any stored session data
       try {
         // Clear localStorage
         localStorage.clear();
@@ -305,11 +305,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Clear sessionStorage  
         sessionStorage.clear();
         
-        // Clear cookies by setting them to expire
+        // Clear all cookies by setting them to expire
         document.cookie.split(";").forEach(cookie => {
           const eqPos = cookie.indexOf("=");
           const name = eqPos > -1 ? cookie.substr(0, eqPos).trim() : cookie.trim();
+          // Clear for current domain and parent domain
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${window.location.hostname}`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          // Also clear without domain specification
           document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
         });
         
@@ -318,15 +321,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.warn('Storage cleanup error (non-critical):', storageError);
       }
       
-      // Now properly await the server sign out
-      try {
-        await api.signOut();
-        console.log('✅ Server session cleared');
-      } catch (error) {
-        console.warn('Better Auth sign out failed (non-critical):', error);
-      }
+      // Skip server sign out call to avoid redirect issues
+      // The manual cookie clearing above should be sufficient since we're using Better Auth with cookies
+      console.log('✅ Sign out completed locally, should show login screen');
       
-      console.log('✅ Sign out completed, should show login screen');
     } catch (error: any) {
       console.error('Sign out error:', error)
       

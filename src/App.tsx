@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import { SessionProvider } from './contexts/SessionContext'
 import { ThemeProvider } from './contexts/ThemeContext'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
+import { SocketProvider } from './contexts/SocketContext'
 import logo from './assets/logo.png'
 import { AuthScreen } from './components/AuthScreen'
 import { InviteSignUpScreen } from './components/InviteSignUpScreen'
@@ -11,10 +12,8 @@ import { InviteRequiredScreen } from './components/InviteRequiredScreen'
 import { OnboardingModal } from './components/OnboardingModal'
 import { ParentDashboard } from './components/ParentDashboard'
 import { FeedScreen } from './components/FeedScreen'
-import { TrainingScreen } from './components/TrainingScreen'
 import { GamesScreen } from './components/GamesScreen'
 import { GameDetailsScreen } from './components/GameDetailsScreen'
-import { TeamChatScreen } from './components/TeamChatScreen'
 import { TeamScreen } from './components/TeamScreen'
 import { MediaScreen } from './components/MediaScreen'
 import { ProfileScreen } from './components/ProfileScreen'
@@ -52,12 +51,22 @@ function AppContent() {
   if (loading) {
     return (
       <>
-        <div className="min-h-screen bg-bg-secondary flex items-center justify-center">
-          <div className="text-center">
+        <div className="min-h-screen relative flex items-center justify-center">
+          {/* Basketball themed background */}
+          <div 
+            className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+            style={{
+              backgroundImage: `url('https://images.pexels.com/photos/1752757/pexels-photo-1752757.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&fit=crop')`,
+              filter: 'blur(6px)',
+            }}
+          ></div>
+          <div className="absolute inset-0 bg-gradient-to-br from-orange-500/50 to-purple-600/50"></div>
+          
+          <div className="relative text-center">
             <div className="w-64 h-64 mb-4 mx-auto">
               <img src={logo} alt="Girls Got Game" className="h-64 w-64 object-contain" />
             </div>
-            <div className="text-lg font-semibold text-text-secondary font-body">Loading...</div>
+            <div className="text-lg font-semibold text-white font-body">Loading...</div>
           </div>
         </div>
         <Toaster position="top-center" />
@@ -110,8 +119,6 @@ function AppContent() {
     switch (currentTab) {
       case 'feed':
         return <FeedScreen onGameClick={navigateToGame} onNavigate={setCurrentTab} showNewPost={showNewPost} setShowNewPost={setShowNewPost} />
-      case 'training':
-        return <TrainingScreen />
       case 'games':
         return <GamesScreen onGameClick={navigateToGame} />
       case 'game-details':
@@ -120,8 +127,6 @@ function AppContent() {
         ) : (
           <GamesScreen onGameClick={navigateToGame} />
         )
-      case 'chat':
-        return <TeamChatScreen />
       case 'team':
         return <TeamScreen />
       case 'media':
@@ -216,7 +221,9 @@ function App() {
     <ThemeProvider>
       <SessionProvider>
         <AuthProvider>
-          <AppContent />
+          <SocketProvider>
+            <AppContent />
+          </SocketProvider>
         </AuthProvider>
       </SessionProvider>
     </ThemeProvider>
